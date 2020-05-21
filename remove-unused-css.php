@@ -5,7 +5,7 @@
  * Copyright 2020 Commeta
  * Released under the GPL v3 or MIT license
  * 
- * Use forked library PHP CSS Parser
+ * Use forked library: PHP CSS Parser
  * https://github.com/sabberworm/PHP-CSS-Parser
  * 
  */
@@ -16,12 +16,44 @@ $json= json_decode($_POST['json'], true);
 
 
 if($json['mode'] == 'auto' || $json['mode'] == 'save'){
+	//if($_SERVER['REMOTE_ADDR'] != '127.0.0.1') die(json_encode([])); // Для запуска на продакшн, можно вписать свой ip
+	
+	
 	////////////////////////////////////////////////////////////////////////
 	// Массив файлов css, накопитель
-	
+	if( file_exists(__DIR__."/styleFiles") ) { 
+		$styleFiles= unserialize(file_get_contents(__DIR__."/styleFiles"));
+	} else {
+		$styleFiles= $json['styleFiles'];
+	}
+
+	foreach($json['styleFiles'] as $v){
+		if( !in_array($v, $styleFiles) ) $styleFiles[]= $v;
+	}
+
+	file_put_contents( __DIR__."/styleFiles", serialize($styleFiles) );
+
 	
 	////////////////////////////////////////////////////////////////////////
-	// Массив неиспользуемых правил, накопитель
+	// Массив неиспользуемых правил
+	if( file_exists(__DIR__."/filesCSS_unused") ) { 
+		$filesCSS_unused= unserialize( file_get_contents(__DIR__."/filesCSS_unused") );
+		
+
+		
+		
+		
+		
+		
+		
+		
+		
+		
+	} else {
+		$unused= $json['unused'];
+	}
+
+	file_put_contents( __DIR__."/unused", serialize($unused) );
 
 
 	////////////////////////////////////////////////////////////////////////
@@ -69,14 +101,36 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 			return true;
 		}
 	});
-
-	$sSource = file_get_contents('../style.css');
-	$oParser = new Sabberworm\CSS\Parser($sSource);
-	$oCss = $oParser->parse();
-	removeSelectors($oCss);
 	
-	print $oCss->render(Sabberworm\CSS\OutputFormat::createPretty());
-	//print $oCss->render(Sabberworm\CSS\OutputFormat::createCompact());
+	if( file_exists(__DIR__."/unused") ) { 
+		$unused= unserialize( file_get_contents(__DIR__."/unused") );
+	} else {
+		$unused= [];
+	}
+
+	if( file_exists(__DIR__."/styleFiles") ) { 
+		$styleFiles= unserialize( file_get_contents(__DIR__."/styleFiles") );
+	} else {
+		$styleFiles= [];
+	}
+	
+	$css_combine= "";
+	
+	foreach($styleFiles as $file){
+		$sSource= file_get_contents($file);
+		$oParser= new Sabberworm\CSS\Parser($sSource);
+		$oCss= $oParser->parse();
+		removeSelectors($oCss);
+		
+		file_put_contents( 
+			__DIR__.'/'.basename($file),   
+			$oCss->render(Sabberworm\CSS\OutputFormat::createPretty())
+		);
+		
+		$css_combine.= $oCss->render(Sabberworm\CSS\OutputFormat::createCompact());
+	}
+	
+	file_put_contents(__DIR__.'/css_combine.css', $css_combine);
 }
 
 
@@ -94,11 +148,15 @@ function diffRules($arr, $search){ // Проверка массива
 	return true;
 }
 
-function removeSelectors($oList) {
+
+
+
+function removeSelectors($oList) { // Удаление пустых и неиспользуемых селекторов
+	global $unused;
+	
     foreach ($oList->getContents() as $oBlock) {
         if ($oBlock instanceof Sabberworm\CSS\RuleSet\DeclarationBlock) {
-			
-            if ( empty ( $oBlock->getRules() ) ) {
+            if ( empty($oBlock->getRules()) ) {
                 $oList->remove( $oBlock );
             } else {
 				foreach($oBlock->getSelectors() as $oSelector) {
@@ -107,13 +165,12 @@ function removeSelectors($oList) {
 					$selector= preg_replace('/[\s]{2,}/', ' ', $oSelector->getSelector() );
 					// print_r( [ $selector ] );
 					
-					if( $oSelector->getSelector() == 'code' ){
-						$oList->remove( $oBlock );
+					if( in_array($selector, $unused) ){
+						$oList->remove($oBlock);
 					}
 				}
-				
 			}
-        } else if ($oBlock instanceof Sabberworm\CSS\CSSList\CSSBlockList) {
+        } else if($oBlock instanceof Sabberworm\CSS\CSSList\CSSBlockList) {
             removeSelectors($oBlock);
             if (empty($oBlock->getContents())) {
                 $oList->remove($oBlock);
