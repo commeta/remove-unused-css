@@ -109,7 +109,7 @@
 		}
 
 
-		window.save_css= function (mode= false) {
+		window.save_css= function(mode= false) {
 			let links= [];
 			links.push( window.location.pathname );
 			
@@ -122,6 +122,7 @@
 			
 			let upload = {
 				"styleFiles": parsedRules.filesCSS,
+				"filesCSS_unused": parsedRules.filesCSS_unused,
 				"unused": window.selectorStats.unused,
 				"pathname": window.location.pathname,
 				"links": array_unique(links),
@@ -161,7 +162,9 @@
 		}
 		
 		
-		setTimeout(function() {
+		loop(document.body);
+		
+		setTimeout(function() { // wait 1s, and restart scroll
 			loop(document.body);
 			scanRules();
 			window.save_css(true);
@@ -206,7 +209,8 @@
 					style: [],
 					support: [],
 					unknown: [],
-					filesCSS: []
+					filesCSS: [],
+					filesCSS_unused: {},
 				};
 				
 			for(var i = 0; i < styleSheets.length; i++) {
@@ -264,6 +268,12 @@
 							parsedRules.unknown.push(rule);
 					}
 				}
+				
+				////////////////////////////////////////////////////////
+				// 
+				
+				
+				
 			}
 			return parsedRules;
 		}
