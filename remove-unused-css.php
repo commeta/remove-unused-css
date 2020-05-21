@@ -34,12 +34,37 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 	file_put_contents( __DIR__."/styleFiles", serialize($styleFiles) );
 
 	
+	
 	////////////////////////////////////////////////////////////////////////
-	// Массив неиспользуемых правил
+	// Массив неиспользуемых правил всего
+	if( file_exists(__DIR__."/unused") ) { 
+		$unused= unserialize( file_get_contents(__DIR__."/unused") );
+	} else {
+		$unused= $json['unused'];
+	}
+
+
+
+
+
+
+
+
+
+
+	file_put_contents( __DIR__."/unused", serialize($unused) );
+	
+	
+	////////////////////////////////////////////////////////////////////////
+	// Массив неиспользуемых правил, по файлам
 	if( file_exists(__DIR__."/filesCSS_unused") ) { 
 		$filesCSS_unused= unserialize( file_get_contents(__DIR__."/filesCSS_unused") );
 		
-
+	
+		
+		
+		
+		
 		
 		
 		
@@ -96,21 +121,18 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		}
 	});
 	
-	if( file_exists(__DIR__."/unused") ) { 
-		$unused= unserialize( file_get_contents(__DIR__."/unused") );
+	
+	if( file_exists(__DIR__."/filesCSS_unused") ) { 
+		$filesCSS_unused= unserialize( file_get_contents(__DIR__."/filesCSS_unused") );
 	} else {
-		$unused= [];
+		$filesCSS_unused= [];
 	}
-
-	if( file_exists(__DIR__."/styleFiles") ) { 
-		$styleFiles= unserialize( file_get_contents(__DIR__."/styleFiles") );
-	} else {
-		$styleFiles= [];
-	}
+	
+	
 	
 	$css_combine= "";
 	
-	foreach($styleFiles as $file){
+	foreach($filesCSS_unused as $file=>$unused){
 		$sSource= file_get_contents($file);
 		$oParser= new Sabberworm\CSS\Parser($sSource);
 		$oCss= $oParser->parse();
@@ -162,6 +184,7 @@ function removeSelectors($oList) { // Удаление пустых и неис�
 					if( in_array($selector, $unused) ){
 						$oList->remove($oBlock);
 					}
+					
 				}
 			}
         } else if($oBlock instanceof Sabberworm\CSS\CSSList\CSSBlockList) {
