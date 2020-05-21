@@ -43,17 +43,11 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 		
 		
 		
-		
-		
-		
-		
-		
-		
 	} else {
-		$unused= $json['unused'];
+		$filesCSS_unused= $json['filesCSS_unused'];
 	}
 
-	file_put_contents( __DIR__."/unused", serialize($unused) );
+	file_put_contents( __DIR__."/filesCSS_unused", serialize($filesCSS_unused) );
 
 
 	////////////////////////////////////////////////////////////////////////
