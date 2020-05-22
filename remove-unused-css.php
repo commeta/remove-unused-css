@@ -34,6 +34,20 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 	
 	
 	////////////////////////////////////////////////////////////////////////
+	// Массив файлов стилей, по страницам
+	//if( file_exists($data."/filesCSS_page") ) { 
+		//$filesCSS_page= unserialize( file_get_contents($data."/filesCSS_page") );
+	//} else {
+		//$filesCSS_page= [$json['pathname']=> $json['filesCSS']];
+	//}
+	
+	//$filesCSS_page[$json['pathname']]= $json['filesCSS'];
+	//file_put_contents( $data."/filesCSS_page", serialize($filesCSS_page) );
+	
+	
+	
+	
+	////////////////////////////////////////////////////////////////////////
 	// Массив неиспользуемых правил, по страницам
 	if( file_exists($data."/unused") ) { 
 		$unused= unserialize( file_get_contents($data."/unused") );
@@ -97,6 +111,14 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 	} else {
 		$filesCSS= [];
 	}
+	
+	/*
+	if( file_exists($data."/filesCSS_page") ) { 
+		$filesCSS_page= unserialize( file_get_contents($data."/filesCSS_page") );
+	} else {
+		$filesCSS_page= [];
+	}
+	*/
 	
 	if( file_exists($data."/unused") ) { 
 		$all_unused= unserialize( file_get_contents($data."/unused") );
@@ -170,7 +192,7 @@ function removeSelectors($oList) { // Удаление пустых и неис�
 					$isPresent= array_filter($all_unused, fn($v) => in_array($selector, $v) );
 					if( is_array($isPresent) && count($isPresent) > 0  ) $delete= true;
 					
-					if($delete){
+					if($delete){ // Добавить проверку есть ли этот файл стиля на странице
 						foreach($all_unused as $page){
 							if( !in_array($selector, $page) ){
 								$delete= false;

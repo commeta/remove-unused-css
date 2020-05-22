@@ -14,7 +14,7 @@
 		'use strict';
 		
 		let div= document.createElement('div'); // Панель управления, вывод на странице в подвале слой fixed
-		div.style= "position:fixed; bottom:0; left:0; background-color:red; width:100%; z-index: auto; padding: 15px; opacity: 0.85; color: white;";
+		div.style= "position:fixed; bottom:0; left:0; background-color:red; width:100%; z-index: 16777271; padding: 15px; opacity: 0.85; color: white;";
 		div.innerHTML= `
 			<strong>Не использовано: </strong>
 			<span id="unused-css-rules">0</span> CSS правил.
