@@ -84,9 +84,11 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 
 
 	if($json['mode'] == 'auto'){
-		foreach($links as $link){ // Посылаем в браузер следующую ссылку
+		foreach($links as $link){ // Посылаем в браузер следующую ссылку, если это html
 			if( !in_array($link, $visited) ){
-				die(json_encode(['status'=> 'ok', 'location' => $link]));
+				if( strpos( get_headers($json['host'].$link, 1)['Content-Type'], 'text/html') !== false  ){
+					die(json_encode(['status'=> 'ok', 'location' => $link]));
+				}
 			}
 		}
 	}

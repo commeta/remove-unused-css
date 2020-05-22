@@ -116,7 +116,7 @@
 			
 			let a= document.getElementsByTagName('a');
 			for(var i = 0; i < a.length; i++) {
-				if( typeof( a[i].hostname ) != "undefined" && typeof( a[i].pathname ) != "undefined" && window.location.hostname == a[i].hostname && a[i].pathname.includes('.html')){
+				if( typeof( a[i].hostname ) != "undefined" && typeof( a[i].pathname ) != "undefined" && window.location.hostname == a[i].hostname ){
 					links.push( a[i].pathname );
 				}
 			}
@@ -125,6 +125,7 @@
 				"filesCSS": parsedRules.filesCSS,
 				"unused": window.selectorStats.unused,
 				"pathname": window.location.pathname,
+				"host":  window.location.protocol + "//" + window.location.hostname,
 				"links": array_unique(links),
 				"mode": "save"
 			};
