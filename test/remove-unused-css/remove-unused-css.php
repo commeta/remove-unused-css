@@ -16,7 +16,7 @@ $json= json_decode($_POST['json'], true);
 set_time_limit(100); // Если будет много файлов можно не успеть, дописать распараллеливание
 
 $data= __DIR__.'/data';
-if( !is_dir(__DIR__."/data") ) mkdir(__DIR__."/data", 0770, true);
+if( !is_dir(__DIR__."/data") ) mkdir(__DIR__."/data", 0755, true);
 
 if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 	//if($_SERVER['REMOTE_ADDR'] != '127.0.0.1') die(json_encode([])); // Для запуска на продакшн, можно вписать свой ip
@@ -134,7 +134,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		$path= parse_url($file)['path'];
 		$created[]= basename(__DIR__).'/css'.$path;
 		
-		if( !is_dir(__DIR__."/css/".dirname($path)) ) mkdir(__DIR__."/css/".dirname($path), 0770, true);
+		if( !is_dir(__DIR__."/css/".dirname($path)) ) mkdir(__DIR__."/css/".dirname($path), 0755, true);
 		$path= __DIR__."/css".$path;
 		
 		$sSource= file_get_contents($file);
