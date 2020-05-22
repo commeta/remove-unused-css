@@ -136,17 +136,20 @@
 			}
 			
 			let upload = {
-				"styleFiles": parsedRules.filesCSS,
 				"filesCSS_unused": filesCSS_unused,
 				"pathname": window.location.pathname,
 				"links": array_unique(links),
 				"mode": "save"
 			};
 			
+			
 			window.unused_length= window.selectorStats.unused.length;
 			
 			if(mode === true) upload['mode']= "auto";
-			if(mode == 'generate') upload['mode']= "generate";
+			if(mode == 'generate') {
+				upload['mode']= "generate";
+				document.getElementById("manual-mode").innerHTML= `Файлы генерируютси, ждите...`;
+			}
 			
 			
 			let data = new FormData();

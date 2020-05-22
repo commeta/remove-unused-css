@@ -23,22 +23,6 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 	
 	
 	////////////////////////////////////////////////////////////////////////
-	// Массив файлов css, накопитель
-	if( file_exists($data."/styleFiles") ) { 
-		$styleFiles= unserialize(file_get_contents($data."/styleFiles"));
-	} else {
-		$styleFiles= $json['styleFiles'];
-	}
-
-	foreach($json['styleFiles'] as $v){
-		if( !in_array($v, $styleFiles) ) $styleFiles[]= $v;
-	}
-
-	file_put_contents( $data."/styleFiles", serialize($styleFiles) );
-
-		
-	
-	////////////////////////////////////////////////////////////////////////
 	// Массив неиспользуемых правил, по файлам
 	if( file_exists($data."/filesCSS_unused") ) { 
 		$filesCSS_unused= unserialize( file_get_contents($data."/filesCSS_unused") );
@@ -48,7 +32,7 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 
 	foreach($json['filesCSS_unused'] as $file=>$unused){	
 		if( !isset($filesCSS_unused[$file]) ) $filesCSS_unused[$file]= [];
-		if(count($filesCSS_unused[$file]) == 0){ // На первом проходе нету ключа
+		if(count($filesCSS_unused[$file]) == 0){
 			$filesCSS_unused[$file]= $unused;
 		}
 		if( count($unused) < count($filesCSS_unused[$file]) ){
@@ -92,7 +76,6 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 		}
 	}
 	
-	//die(json_encode(['status'=> 'complete', 'unused_length'=> count($json['unused']) ]));
 	die(json_encode(['status'=> 'complete']));
 }
 
@@ -113,7 +96,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 	} else {
 		$filesCSS_unused= [];
 	}
-		
+
 	$css_combine= "";
 	$created= [];
 	
@@ -122,7 +105,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		$all_unused= array_merge($all_unused, $unused);
 	}
 	
-	foreach($filesCSS_unused as $file=>$unused){ // Продумать названия файлов, в css их по путям
+	foreach($filesCSS_unused as $file=>$unused){
 		$path= parse_url($file)['path'];
 		$created[]= basename(__DIR__).'/css'.$path;
 		
@@ -142,6 +125,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		
 		$css_combine.= $oCss->render(Sabberworm\CSS\OutputFormat::createCompact());
 	}
+	
 	$created[]= basename(__DIR__).'/css/css_combine.min.css';
 	file_put_contents(__DIR__.'/css/css_combine.min.css', $css_combine);
 	
