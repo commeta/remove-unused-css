@@ -31,7 +31,7 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 	}
 
 	
-	foreach($json['filesCSS_unused'] as $file=>$unused){ 
+	foreach($json['filesCSS_unused'] as $file=>$unused){ // Надо тестировать на многовариантной выборке кейсов!
 		if( !isset($filesCSS_unused[$file]) ) $filesCSS_unused[$file]= [];
 		
 		if(count($filesCSS_unused[$file]) == 0){
