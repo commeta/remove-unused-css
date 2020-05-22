@@ -116,7 +116,7 @@
 			
 			let a= document.getElementsByTagName('a');
 			for(var i = 0; i < a.length; i++) {
-				if( typeof( a[i].hostname ) != "undefined" && typeof( a[i].pathname ) != "undefined" && window.location.hostname == a[i].hostname ){
+				if( typeof( a[i].hostname ) != "undefined" && typeof( a[i].pathname ) != "undefined" && window.location.hostname == a[i].hostname && a[i].pathname.includes('.html')){
 					links.push( a[i].pathname );
 				}
 			}
