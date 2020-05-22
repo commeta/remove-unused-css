@@ -167,7 +167,6 @@ function removeSelectors($oList) { // Удаление пустых и неис�
 					$selector= preg_replace('/[\s]{2,}/', ' ', $oSelector->getSelector() );
 					
 					$delete= false;
-					
 					$isPresent= array_filter($all_unused, fn($v) => in_array($selector, $v) );
 					if( is_array($isPresent) && count($isPresent) > 0  ) $delete= true;
 					
@@ -183,6 +182,8 @@ function removeSelectors($oList) { // Удаление пустых и неис�
 					if( $delete ){
 						$oList->remove($oBlock);
 					}
+					
+					
 				}
 			}
         } else if($oBlock instanceof Sabberworm\CSS\CSSList\CSSBlockList) {

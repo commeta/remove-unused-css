@@ -228,7 +228,6 @@
 					support: [],
 					unknown: [],
 					filesCSS: [],
-					styleRule: [],
 				};
 
 			for(var i = 0; i < styleSheets.length; i++) {
@@ -275,11 +274,6 @@
 							parsedRules.media.push(rule.conditionText);
 							break;
 						case 'CSSStyleRule':
-							let styleRule= {};
-							styleRule['CSSStyleRule']= rule.selectorText;
-							styleRule['file']= rule.parentStyleSheet.href;
-							parsedRules.styleRule.push(styleRule);
-
 							// if (rule.selectorText)
 							parsedRules.style.push(rule.selectorText);
 							// rule.cssText
