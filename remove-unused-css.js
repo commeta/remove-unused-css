@@ -90,10 +90,6 @@
 		}
 		
 
-		setInterval(function() {
-			scanRules();
-		}, 1000);
-
 		function loop(node) {
 			// do some thing with the node here
 			var nodes = node.childNodes;
@@ -181,13 +177,17 @@
 		}
 		
 		
+		setInterval(function() {
+			scanRules();
+		}, 1000);
+		
 		loop(document.body);
 		
 		setTimeout(function() { // wait 1s, and restart scroll
 			loop(document.body);
 			scanRules();
 			window.save_css(true);
-		}, 1000);
+		}, 1500);
 
 
 		function array_unique(arr) {
@@ -268,7 +268,6 @@
 							parsedRules.fontFaces.push( rule.cssText.replace(/\r?\n/g, "").replace(/\s+/g, ' ').trim() );
 							break;
 						case 'CSSKeyframesRule':
-						
 							parsedRules.keyframes.push( rule.cssText.replace(/\r?\n/g, "").replace(/\s+/g, ' ').trim() );
 							break;
 						case 'CSSMediaRule':
