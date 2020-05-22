@@ -157,11 +157,11 @@ function diffRules($arr, $search){ // Проверка массива
 function removeSelectors($oList) { // Удаление пустых и неиспользуемых селекторов
 	global $all_unused;
 	
-    foreach ($oList->getContents() as $oBlock) {
-        if($oBlock instanceof Sabberworm\CSS\RuleSet\DeclarationBlock) {
-            if ( empty($oBlock->getRules()) ) {
-                $oList->remove( $oBlock );
-            } else {
+	foreach ($oList->getContents() as $oBlock) {
+		if($oBlock instanceof Sabberworm\CSS\RuleSet\DeclarationBlock) {
+			if ( empty($oBlock->getRules()) ) {
+				$oList->remove( $oBlock );
+			} else {
 				foreach($oBlock->getSelectors() as $oSelector) {
 					//Loop over all selector parts (the comma-separated strings in a selector) and prepend the id
 					$selector= preg_replace('/[\s]{2,}/', ' ', $oSelector->getSelector() );
@@ -182,17 +182,15 @@ function removeSelectors($oList) { // Удаление пустых и неис�
 					if( $delete ){
 						$oList->remove($oBlock);
 					}
-					
-					
 				}
 			}
-        } else if($oBlock instanceof Sabberworm\CSS\CSSList\CSSBlockList) {
-            removeSelectors($oBlock);
-            if (empty($oBlock->getContents())) {
-                $oList->remove($oBlock);
-            }
-        }
-    }
+		} else if($oBlock instanceof Sabberworm\CSS\CSSList\CSSBlockList) {
+			removeSelectors($oBlock);
+			if (empty($oBlock->getContents())) {
+				$oList->remove($oBlock);
+			}
+		}
+	}
 }
 
 
