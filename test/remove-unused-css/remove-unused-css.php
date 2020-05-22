@@ -159,22 +159,12 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		$oParser= new Sabberworm\CSS\Parser($sSource);
 		$oCss= $oParser->parse();
 		
-		
-		file_put_contents( 
-			$path.'orig',
-			$oCss->render(Sabberworm\CSS\OutputFormat::createPretty())
-		);
-		
 		removeSelectors($oCss);
 		
 		file_put_contents( 
 			$path,
 			$oCss->render(Sabberworm\CSS\OutputFormat::createPretty())
 		);
-		
-
-
-		
 		
 		$css_combine.= $oCss->render(Sabberworm\CSS\OutputFormat::createCompact());
 	}
