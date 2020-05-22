@@ -34,13 +34,12 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 	foreach($json['filesCSS_unused'] as $file=>$unused){ 
 		if( !isset($filesCSS_unused[$file]) ) $filesCSS_unused[$file]= [];
 		
-		
 		if(count($filesCSS_unused[$file]) == 0){
 			$filesCSS_unused[$file]= $unused;
-		}
-		
-		foreach($filesCSS_unused[$file] as $k=>$rule){
-			if( !in_array($rule, $unused) ) unset( $filesCSS_unused[$file][$k] );
+		} else {
+			foreach($filesCSS_unused[$file] as $k=>$rule){
+				if( !in_array($rule, $unused) ) unset( $filesCSS_unused[$file][$k] );
+			}
 		}
 	}
 	
