@@ -61,7 +61,7 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 
 	////////////////////////////////////////////////////////////////////////
 	// Массив ссылок для обхода страниц
-	if( file_exists($data."/links") ) { 
+	if( file_exists($data."/links") ) {
 		$links= array_merge( unserialize( file_get_contents($data."/links") ), $json['links'] );
 	} else {
 		$links= $json['links'];
@@ -71,6 +71,14 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 	file_put_contents( $data."/links", serialize($links) );
 
 
+	////////////////////////////////////////////////////////////////////////
+	// Массив файлов no html
+	if( file_exists($data."/no_html") ) { 
+		$no_html= unserialize( file_get_contents($data."/no_html") );
+	} else {
+		$no_html= [];
+	}
+	
 	////////////////////////////////////////////////////////////////////////
 	// Массив уже обойденных страниц
 	if( file_exists($data."/visited") ) { 
@@ -85,14 +93,22 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 
 	if($json['mode'] == 'auto'){
 		foreach($links as $link){ // Посылаем в браузер следующую ссылку, если это html
-			if( !in_array($link, $visited) ){
+			if( !in_array($link, $visited) && !in_array($link, $no_html) ){
 				if( strpos( get_headers($json['host'].$link, 1)['Content-Type'], 'text/html') !== false  ){
+					file_put_contents( $data."/no_html", serialize($no_html) );
+					
 					die(json_encode(['status'=> 'ok', 'location' => $link]));
+				} else {
+					$no_html[]= $link;
 				}
 			}
 		}
 	}
 	
+	file_put_contents( $data."/no_html", serialize($no_html) );
+	
+	
+	// Вернуть количество сохраненных элементов на этой странице, для сравнения в браузере
 	die(json_encode(['status'=> 'complete']));
 }
 
@@ -143,12 +159,22 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		$oParser= new Sabberworm\CSS\Parser($sSource);
 		$oCss= $oParser->parse();
 		
+		
+		file_put_contents( 
+			$path.'orig',
+			$oCss->render(Sabberworm\CSS\OutputFormat::createPretty())
+		);
+		
 		removeSelectors($oCss);
 		
 		file_put_contents( 
 			$path,
 			$oCss->render(Sabberworm\CSS\OutputFormat::createPretty())
 		);
+		
+
+
+		
 		
 		$css_combine.= $oCss->render(Sabberworm\CSS\OutputFormat::createCompact());
 	}

@@ -265,10 +265,11 @@
 					
 					switch(ruleClass) {
 						case 'CSSFontFaceRule':
-							parsedRules.fontFaces.push(rule.cssText);
+							parsedRules.fontFaces.push( rule.cssText.replace(/\r?\n/g, "").replace(/\s+/g, ' ').trim() );
 							break;
 						case 'CSSKeyframesRule':
-							parsedRules.keyframes.push(rule.cssText);
+						
+							parsedRules.keyframes.push( rule.cssText.replace(/\r?\n/g, "").replace(/\s+/g, ' ').trim() );
 							break;
 						case 'CSSMediaRule':
 							// if (rule.conditionText)
