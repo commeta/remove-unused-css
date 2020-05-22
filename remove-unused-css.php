@@ -30,32 +30,19 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 		$filesCSS_unused= $json['filesCSS_unused'];
 	}
 
+	
 	foreach($json['filesCSS_unused'] as $file=>$unused){ 
 		if( !isset($filesCSS_unused[$file]) ) $filesCSS_unused[$file]= [];
+		
 		
 		if(count($filesCSS_unused[$file]) == 0){
 			$filesCSS_unused[$file]= $unused;
 		}
 		
-		if( count($unused) < count($filesCSS_unused[$file]) ){// Тут нужен накопитель! bag!!!! тестируем
-			$new_unused= $unused;
-			
-			foreach($filesCSS_unused[$file] as $rule){
-				if( !in_array($rule, $unused) ) $new_unused[]= $rule;
-			}
-			
-			$filesCSS_unused[$file]= $new_unused;
-		} else {
-			$new_unused= $filesCSS_unused[$file];
-			
-			foreach($unused as $rule){
-				if( !in_array($rule, $filesCSS_unused[$file]) ) $new_unused[]= $rule;
-			}
-			
-			$filesCSS_unused[$file]= $new_unused;
+		foreach($filesCSS_unused[$file] as $k=>$rule){
+			if( !in_array($rule, $unused) ) unset( $filesCSS_unused[$file][$k] );
 		}
 	}
-
 	
 	file_put_contents( $data."/filesCSS_unused", serialize($filesCSS_unused) );
 
