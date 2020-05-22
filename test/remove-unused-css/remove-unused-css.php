@@ -57,7 +57,7 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 
 	$unused[$json['pathname']]= $json['unused'];
 	file_put_contents( $data."/unused", serialize($unused) );
-		
+
 
 	////////////////////////////////////////////////////////////////////////
 	// Массив ссылок для обхода страниц
@@ -192,7 +192,7 @@ function removeSelectors($oList) { // Удаление пустых и неис�
 					
 					$delete= false;
 					$isPresent= array_filter($all_unused, fn($v) => in_array($selector, $v) );
-					if( is_array($isPresent) && count($isPresent) > 0  ) $delete= true;
+					if(is_array($isPresent) && count($isPresent) > 0) $delete= true;
 					
 					if($delete){ // Добавить проверку есть ли этот файл стиля на странице
 						foreach($all_unused as $page){
@@ -203,7 +203,7 @@ function removeSelectors($oList) { // Удаление пустых и неис�
 						}
 					}
 					
-					if( $delete ){
+					if($delete){
 						$oList->remove($oBlock);
 					}
 				}
