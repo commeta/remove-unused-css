@@ -148,7 +148,7 @@
 			if(mode === true) upload['mode']= "auto";
 			if(mode == 'generate') {
 				upload['mode']= "generate";
-				document.getElementById("manual-mode").innerHTML= `Файлы генерируютси, ждите...`;
+				document.getElementById("manual-mode").innerHTML= `Файлы генерируются, ждите...`;
 			}
 			
 			
