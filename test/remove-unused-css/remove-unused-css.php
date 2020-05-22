@@ -23,28 +23,27 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 
 
 	////////////////////////////////////////////////////////////////////////
-	// Массив неиспользуемых правил, по файлам
-	if( file_exists($data."/filesCSS_unused") ) { 
-		$filesCSS_unused= unserialize( file_get_contents($data."/filesCSS_unused") );
+	// Массив файлов стилей
+	if( file_exists($data."/filesCSS") ) { 
+		$filesCSS= array_unique( array_merge(unserialize( file_get_contents($data."/filesCSS") ), $json['filesCSS']));
 	} else {
-		$filesCSS_unused= $json['filesCSS_unused'];
+		$filesCSS= $json['filesCSS'];
+	}
+	
+	file_put_contents( $data."/filesCSS", serialize($filesCSS) );
+	
+	
+	////////////////////////////////////////////////////////////////////////
+	// Массив неиспользуемых правил, по страницам
+	if( file_exists($data."/unused") ) { 
+		$unused= unserialize( file_get_contents($data."/unused") );
+	} else {
+		$unused= [$json['pathname']=>$json['unused']];
 	}
 
-	
-	foreach($json['filesCSS_unused'] as $file=>$unused){ // Надо тестировать на многовариантной выборке кейсов!
-		if( !isset($filesCSS_unused[$file]) ) $filesCSS_unused[$file]= [];
+	$unused[$json['pathname']]= $json['unused'];
+	file_put_contents( $data."/unused", serialize($unused) );
 		
-		if(count($filesCSS_unused[$file]) == 0){
-			$filesCSS_unused[$file]= $unused;
-		} else {
-			foreach($filesCSS_unused[$file] as $k=>$rule){
-				if( !in_array($rule, $unused) ) unset( $filesCSS_unused[$file][$k] );
-			}
-		}
-	}
-	
-	file_put_contents( $data."/filesCSS_unused", serialize($filesCSS_unused) );
-
 
 	////////////////////////////////////////////////////////////////////////
 	// Массив ссылок для обхода страниц
@@ -93,21 +92,23 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 	});
 	
 	
-	if( file_exists($data."/filesCSS_unused") ) { 
-		$filesCSS_unused= unserialize( file_get_contents($data."/filesCSS_unused") );
+	if( file_exists($data."/filesCSS") ) { 
+		$filesCSS= unserialize( file_get_contents($data."/filesCSS") );
 	} else {
-		$filesCSS_unused= [];
+		$filesCSS= [];
 	}
-
+	
+	if( file_exists($data."/unused") ) { 
+		$all_unused= unserialize( file_get_contents($data."/unused") );
+	} else {
+		$all_unused= [];
+	}
+	
+	
 	$css_combine= "";
 	$created= [];
 	
-	$all_unused= [];
-	foreach($filesCSS_unused as $file=>$unused){
-		$all_unused= array_merge($all_unused, $unused);
-	}
-	
-	foreach($filesCSS_unused as $file=>$unused){
+	foreach($filesCSS as $file){
 		$path= parse_url($file)['path'];
 		$created[]= basename(__DIR__).'/css'.$path;
 		
@@ -127,6 +128,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		
 		$css_combine.= $oCss->render(Sabberworm\CSS\OutputFormat::createCompact());
 	}
+
 	
 	$created[]= basename(__DIR__).'/css/css_combine.min.css';
 	file_put_contents(__DIR__.'/css/css_combine.min.css', $css_combine);
@@ -155,7 +157,6 @@ function diffRules($arr, $search){ // Проверка массива
 function removeSelectors($oList) { // Удаление пустых и неиспользуемых селекторов
 	global $all_unused;
 	
-	
     foreach ($oList->getContents() as $oBlock) {
         if($oBlock instanceof Sabberworm\CSS\RuleSet\DeclarationBlock) {
             if ( empty($oBlock->getRules()) ) {
@@ -164,8 +165,22 @@ function removeSelectors($oList) { // Удаление пустых и неис�
 				foreach($oBlock->getSelectors() as $oSelector) {
 					//Loop over all selector parts (the comma-separated strings in a selector) and prepend the id
 					$selector= preg_replace('/[\s]{2,}/', ' ', $oSelector->getSelector() );
-				
-					if( in_array($selector, $all_unused) ){
+					
+					$delete= false;
+					
+					$isPresent= array_filter($all_unused, fn($v) => in_array($selector, $v) );
+					if( is_array($isPresent) && count($isPresent) > 0  ) $delete= true;
+					
+					if($delete){
+						foreach($all_unused as $page){
+							if( !in_array($selector, $page) ){
+								$delete= false;
+								break;
+							}
+						}
+					}
+					
+					if( $delete ){
 						$oList->remove($oBlock);
 					}
 				}

@@ -29,7 +29,6 @@
 		detectDuplicateSelectors(parsedRules);
 		
 		var selectorsToTrack = getSelectorsToTrack(parsedRules);
-		var filesCSS_unused= {};
 		
 		window.selectorStats = {
 			unused: [],
@@ -65,18 +64,6 @@
 			if(unused.length !== window.selectorStats.unused.length) {
 				message.push(unused.length + ' unused');
 				document.getElementById("unused-css-rules").innerHTML= unused.length;
-				
-				// Объект свободных классов, с ключами файлами.
-				filesCSS_unused= {};
-				parsedCssRules.filesCSS.forEach(function(file, index, filesCss) {
-					filesCSS_unused[file]= [];
-				});
-				
-				parsedCssRules.styleRule.forEach(function(style, index, styleRules) {
-					if( unused.includes(style.CSSStyleRule) ) {
-						filesCSS_unused[style.file].push(style.CSSStyleRule);
-					}
-				});
 			}
 			
 			window.selectorStats.unused = unused;
@@ -106,7 +93,6 @@
 		setInterval(function() {
 			scanRules();
 		}, 1000);
-		//scanRules();
 
 		function loop(node) {
 			// do some thing with the node here
@@ -136,7 +122,8 @@
 			}
 			
 			let upload = {
-				"filesCSS_unused": filesCSS_unused,
+				"filesCSS": parsedRules.filesCSS,
+				"unused": window.selectorStats.unused,
 				"pathname": window.location.pathname,
 				"links": array_unique(links),
 				"mode": "save"
@@ -176,7 +163,6 @@
 							<button onclick="window.save_css('generate')">Сгенерировать файлы</button>
 						`;
 						document.getElementById("saveCSSrules").disabled = true;
-						//window.unused_length= data.unused_length;
 					}
 					
 					if(data.status == "generate"){
