@@ -13,14 +13,15 @@
 header('Content-type: application/json');
 if(!isset($_POST['json'])) die(json_encode([]));
 $json= json_decode($_POST['json'], true);
+set_time_limit(100); // Если будет много файлов можно не успеть, дописать распараллеливание
 
 $data= __DIR__.'/data';
-if( !is_dir(__DIR__."/data") ) mkdir (__DIR__."/data", 0770, true);
+if( !is_dir(__DIR__."/data") ) mkdir(__DIR__."/data", 0770, true);
 
 if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 	//if($_SERVER['REMOTE_ADDR'] != '127.0.0.1') die(json_encode([])); // Для запуска на продакшн, можно вписать свой ip
 
-	
+
 	////////////////////////////////////////////////////////////////////////
 	// Массив неиспользуемых правил, по файлам
 	if( file_exists($data."/filesCSS_unused") ) { 
@@ -29,13 +30,29 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 		$filesCSS_unused= $json['filesCSS_unused'];
 	}
 
-	foreach($json['filesCSS_unused'] as $file=>$unused){ // Тут нужен накопитель! bag!!!!
+	foreach($json['filesCSS_unused'] as $file=>$unused){ 
 		if( !isset($filesCSS_unused[$file]) ) $filesCSS_unused[$file]= [];
+		
 		if(count($filesCSS_unused[$file]) == 0){
 			$filesCSS_unused[$file]= $unused;
 		}
-		if( count($unused) < count($filesCSS_unused[$file]) ){
-			$filesCSS_unused[$file]= $unused;
+		
+		if( count($unused) < count($filesCSS_unused[$file]) ){// Тут нужен накопитель! bag!!!! тестируем
+			$new_unused= $unused;
+			
+			foreach($filesCSS_unused[$file] as $rule){
+				if( !in_array($rule, $unused) ) $new_unused[]= $rule;
+			}
+			
+			$filesCSS_unused[$file]= $new_unused;
+		} else {
+			$new_unused= $filesCSS_unused[$file];
+			
+			foreach($unused as $rule){
+				if( !in_array($rule, $filesCSS_unused[$file]) ) $new_unused[]= $rule;
+			}
+			
+			$filesCSS_unused[$file]= $new_unused;
 		}
 	}
 
@@ -108,7 +125,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		$path= parse_url($file)['path'];
 		$created[]= basename(__DIR__).'/css'.$path;
 		
-		if( !is_dir(__DIR__."/css/".dirname($path)) ) mkdir (__DIR__."/css/".dirname($path), 0770, true);
+		if( !is_dir(__DIR__."/css/".dirname($path)) ) mkdir(__DIR__."/css/".dirname($path), 0770, true);
 		$path= __DIR__."/css".$path;
 		
 		$sSource= file_get_contents($file);
@@ -154,7 +171,7 @@ function removeSelectors($oList) { // Удаление пустых и неис�
 	
 	
     foreach ($oList->getContents() as $oBlock) {
-        if ($oBlock instanceof Sabberworm\CSS\RuleSet\DeclarationBlock) {
+        if($oBlock instanceof Sabberworm\CSS\RuleSet\DeclarationBlock) {
             if ( empty($oBlock->getRules()) ) {
                 $oList->remove( $oBlock );
             } else {
