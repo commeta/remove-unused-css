@@ -121,7 +121,6 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		$filesCSS= $data_file['filesCSS'];
 		$all_unused= $data_file['unused'];
 		$filesCSS_page= $data_file['filesCSS_page'];
-		
 	} else {
 		die(json_encode(['status'=>'error']));
 	}
@@ -168,22 +167,6 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 
 
 
-
-
-function diffRules($arr, $search){ // Проверка массива
-	foreach($arr as $k=>$v){
-		if( isset($search[$k]) && $search[$k] == $v ){
-			continue;
-		} else {
-			return false;
-		}
-	}
-	return true;
-}
-
-
-
-
 function removeSelectors($oList) { // Удаление пустых и неиспользуемых селекторов
 	global $all_unused, $file, $filesCSS_page;
 	
@@ -201,7 +184,7 @@ function removeSelectors($oList) { // Удаление пустых и неис�
 					if(is_array($isPresent) && count($isPresent) > 0) {
 						$delete= true;
 					
-						foreach($all_unused as $page=>$page_unused){ // Теряет нужные правила, пока отключить
+						foreach($all_unused as $page=>$page_unused){ // Теряет нужные правила, пока отключить, добавить список обнаруженных правил, и по ним сверять
 							//if( isset($filesCSS_page[$page]) && $filesCSS_page[$page] == $file && !in_array($selector, $page_unused ) ){
 							//if( isset($filesCSS_page[$page]) && !in_array($selector, $page_unused ) ){
 							if( !in_array($selector, $page_unused ) ){
@@ -234,6 +217,11 @@ function rel2abs( $rel, $base ) {
 	if ( strpos( $rel,"//" ) === 0 ) {
 		return $scheme . ':' . $rel;
 	}
+	
+	// return if already local URL from root
+	if ( $rel[0] == '/' ) {
+		return $rel;
+	}
 
 	// return if already absolute URL
 	if ( parse_url( $rel, PHP_URL_SCHEME ) != '' ) {
@@ -247,11 +235,6 @@ function rel2abs( $rel, $base ) {
 
 	// remove non-directory element from path
 	$path = preg_replace( '#/[^/]*$#', '', $path );
-
-	// destroy path if relative url points to root
-	if ( $rel[0] ==  '/' ) {
-		$path = '';
-	}
 
 	// dirty absolute URL
 	//$abs = $host . $path . "/" . $rel;

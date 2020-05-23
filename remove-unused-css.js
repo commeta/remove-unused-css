@@ -161,6 +161,8 @@
 							<button id="saveCSSrules" onclick="window.save_css()">Сохранить правила</button>
 							<button onclick="window.save_css('generate')">Сгенерировать файлы</button>
 						`;
+						
+						// Глючит, т.к. добавляются новые правила уже после сохранения, исправить!
 						document.getElementById("saveCSSrules").disabled = true;
 						
 						window.unused_length= data.unused_length;
