@@ -51,8 +51,15 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 	// Массив неиспользуемых правил, по страницам
 	if( !isset($data_file['unused']) ){ 
 		$data_file['unused']= [$json['pathname']=>$json['unused']];
-	} 
-	$data_file['unused'][$json['pathname']]= $json['unused'];
+	}
+	
+	if( isset($data_file['unused'][$json['pathname']]) ){
+		if( count($data_file['unused'][$json['pathname']]) > count($json['unused']) ){
+			$data_file['unused'][$json['pathname']]= $json['unused'];
+		}
+	} else {
+		$data_file['unused'][$json['pathname']]= $json['unused'];
+	}
 
 
 	////////////////////////////////////////////////////////////////////////
