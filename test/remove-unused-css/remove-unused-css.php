@@ -148,7 +148,14 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 			$oCss->render(Sabberworm\CSS\OutputFormat::createPretty())
 		);
 		
-		$css_combine.= parseURL($oCss->render(Sabberworm\CSS\OutputFormat::createCompact()));
+		$css_combine.= preg_replace_callback(
+			'/url\("([^)]*)"\)/',
+			function ($matches) {
+				global $file;
+				return sprintf('url("%s")',rel2abs($matches[1], $file));
+			},
+			$oCss->render(Sabberworm\CSS\OutputFormat::createCompact())
+		);
 	}
 
 	// Генерирует общий файл, но надо заменить пути на абсолютные в пределах домена
@@ -213,18 +220,6 @@ function removeSelectors($oList) { // Удаление пустых и неис�
 			}
 		}
 	}
-}
-
-function parseURL($str){
-    $str = preg_replace_callback(
-        '/url\("([^)]*)"\)/',
-        function ($matches) {
-			global $file;
-            return sprintf('url("%s")',rel2abs($matches[1], $file));
-        },
-        $str
-    );
-	return $str;
 }
 
 
