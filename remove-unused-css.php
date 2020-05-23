@@ -148,7 +148,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 			$oCss->render(Sabberworm\CSS\OutputFormat::createPretty())
 		);
 		
-		$css_combine.= preg_replace_callback(
+		$css_combine.= preg_replace_callback( // заменить пути на относительные от корня домена
 			'/url\("([^)]*)"\)/',
 			function ($matches) {
 				global $file;
@@ -158,7 +158,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		);
 	}
 
-	// Генерирует общий файл, но надо заменить пути на абсолютные в пределах домена
+	// Генерирует общий файл
 	$created[]= basename(__DIR__).'/css/remove-unused-css.min.css';
 	file_put_contents(__DIR__.'/css/remove-unused-css.min.css', $css_combine);
 	
