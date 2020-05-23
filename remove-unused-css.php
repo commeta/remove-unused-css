@@ -41,10 +41,10 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 	
 	////////////////////////////////////////////////////////////////////////
 	// Массив файлов стилей, по страницам
-	//if( !isset($data_file['filesCSS_page']) ){ 
-		//$data_file['filesCSS_page']= [$json['pathname']=>$json['filesCSS']];
-	//} 
-	//$data_file['filesCSS_page'][$json['pathname']]= $json['filesCSS'];
+	if( !isset($data_file['filesCSS_page']) ){ 
+		$data_file['filesCSS_page']= [$json['pathname']=>$json['filesCSS']];
+	} 
+	$data_file['filesCSS_page'][$json['pathname']]= $json['filesCSS'];
 	
 
 	////////////////////////////////////////////////////////////////////////
@@ -73,7 +73,7 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 
 
 	////////////////////////////////////////////////////////////////////////
-	// Массив файлов no html
+	// Массив ссылок no html
 	if(!isset($data_file['no_html'])) { 
 		$data_file['no_html']= [];
 	} 
@@ -120,7 +120,8 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		
 		$filesCSS= $data_file['filesCSS'];
 		$all_unused= $data_file['unused'];
-		$filesCSS= $data_file['filesCSS'];
+		$filesCSS_page= $data_file['filesCSS_page'];
+		
 	} else {
 		die(json_encode(['status'=>'error']));
 	}
@@ -176,7 +177,7 @@ function diffRules($arr, $search){ // Проверка массива
 
 
 function removeSelectors($oList) { // Удаление пустых и неиспользуемых селекторов
-	global $all_unused;
+	global $all_unused, $file, $filesCSS_page;
 	
 	foreach ($oList->getContents() as $oBlock) {
 		if($oBlock instanceof Sabberworm\CSS\RuleSet\DeclarationBlock) {
@@ -189,11 +190,11 @@ function removeSelectors($oList) { // Удаление пустых и неис�
 					
 					$delete= false;
 					$isPresent= array_filter($all_unused, fn($v) => in_array($selector, $v) );
-					if(is_array($isPresent) && count($isPresent) > 0) $delete= true;
+					if(is_array($isPresent) && count($isPresent) > 0) {
+						$delete= true;
 					
-					if($delete){
-						foreach($all_unused as $page){
-							if( !in_array($selector, $page) ){
+						foreach($all_unused as $k=>$page){
+							if( isset($filesCSS_page[$k]) && $filesCSS_page[$k] == $file && !in_array($selector, $page ) ){
 								$delete= false;
 								break;
 							}
