@@ -72,9 +72,11 @@
 			
 			if(typeof( window.unused_length ) != "undefined" && window.unused_length != unused.length){
 				let saveCSSrules= document.getElementById("saveCSSrules");
-				if(saveCSSrules) saveCSSrules.disabled= false;
+				if(saveCSSrules && window.unused_length > unused.length) {
+					saveCSSrules.disabled= false;
+				}
 				
-				window.unused_length= unused.length;
+				//window.unused_length= unused.length;
 			}
 			
 			
@@ -131,7 +133,7 @@
 			};
 			
 			
-			window.unused_length= window.selectorStats.unused.length;
+			//window.unused_length= window.selectorStats.unused.length;
 			
 			if(mode === true) upload['mode']= "auto";
 			if(mode == 'generate') {
@@ -164,6 +166,8 @@
 							<button onclick="window.save_css('generate')">Сгенерировать файлы</button>
 						`;
 						document.getElementById("saveCSSrules").disabled = true;
+						
+						window.unused_length= data.unused_length;
 					}
 					
 					if(data.status == "generate"){

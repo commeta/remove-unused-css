@@ -101,7 +101,7 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 	}
 	
 	file_put_contents( $data."/data_file", serialize($data_file) );
-	die(json_encode(['status'=> 'complete']));
+	die(json_encode(['status'=> 'complete', 'unused_length'=> count($data_file['unused'][$json['pathname']]) ]));
 }
 
 
