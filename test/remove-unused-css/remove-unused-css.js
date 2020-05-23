@@ -38,6 +38,8 @@
 		
 		console.log('Tracking style usage (inspect window.selectorStats for details)...');
 		
+		window.rules_length= parsedRules.style.length;
+		
 		function scanRules(){
 			var parsedCssRules= parseCssRules();
 			var newSelectors = getSelectorsToTrack(parsedCssRules);
@@ -71,7 +73,13 @@
 			window.selectorStats.unused = unused;
 			
 			if(typeof( window.unused_length ) != "undefined" && window.unused_length > unused.length){
-				let saveCSSrules= document.getElementById("saveCSSrules"); // bag!
+				let saveCSSrules= document.getElementById("saveCSSrules"); 
+				saveCSSrules.disabled= false;
+			}
+			
+			if(typeof( window.unused_length ) != "undefined" && window.rules_length < parsedCssRules.style.length){
+				window.rules_length= parsedCssRules.style.length;
+				let saveCSSrules= document.getElementById("saveCSSrules"); 
 				saveCSSrules.disabled= false;
 			}
 			
@@ -118,9 +126,10 @@
 					links.push( a[i].pathname );
 				}
 			}
-			
+						
 			let upload = {
 				"filesCSS": parsedRules.filesCSS,
+				"rules_length": window.rules_length,
 				"unused": window.selectorStats.unused,
 				"pathname": window.location.pathname,
 				"host":  window.location.protocol + "//" + window.location.hostname,
@@ -154,7 +163,7 @@
 					window.location.href= data.location;
 				}
 				
-				if(typeof( data.status ) != "undefined")
+				if(typeof( data.status ) != "undefined"){
 					if(data.status == "complete"){
 						document.getElementById("manual-mode").innerHTML= `
 							Автоматический захват правил закончен, ручной режим:
@@ -162,10 +171,10 @@
 							<button onclick="window.save_css('generate')">Сгенерировать файлы</button>
 						`;
 						
-						// Глючит, т.к. добавляются новые правила уже после сохранения, исправить! bag!
 						document.getElementById("saveCSSrules").disabled = true;
 						
 						window.unused_length= data.unused_length;
+						window.rules_length= data.rules_length;
 					}
 					
 					if(data.status == "generate"){
@@ -178,7 +187,7 @@
 							Сгенерированы новые css файлы: ${files}
 						`;
 					}
-					
+				}
 			}).catch(() => console.log('ошибка'));
 		}
 		
@@ -240,7 +249,7 @@
 					style: [],
 					support: [],
 					unknown: [],
-					filesCSS: [],
+					filesCSS: []
 				};
 
 			for(var i = 0; i < styleSheets.length; i++) {
@@ -272,6 +281,7 @@
 					parsedRules.filesCSS.push(styleSheet.href);
 					parsedRules.filesCSS= array_unique(parsedRules.filesCSS);
 				}
+				
 				
 				for(var j = 0; j < rules.length; j++) {
 					var rule = rules[j];

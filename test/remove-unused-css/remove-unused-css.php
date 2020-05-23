@@ -29,7 +29,18 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 		$data_file= [];
 	}
 
-
+	
+	////////////////////////////////////////////////////////////////////////
+	// 	
+	if( !isset($data_file['rules_length']) ){ 
+		$data_file['rules_length']= [];
+	} 
+	
+	if( !isset($data_file['rules_length'][$json['pathname']]) ){ 
+		$data_file['rules_length'][$json['pathname']]= $json['rules_length'];
+	} 
+	
+	
 	////////////////////////////////////////////////////////////////////////
 	// Массив файлов стилей
 	if( isset($data_file['filesCSS']) ) { 
@@ -53,12 +64,22 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 		$data_file['unused']= [$json['pathname']=>$json['unused']];
 	}
 	
-	if( isset($data_file['unused'][$json['pathname']]) ){ // Сначала сверить со списком использованных! bug!
+
+	if( isset($data_file['unused'][$json['pathname']]) ){ 
 		if( count($data_file['unused'][$json['pathname']]) > count($json['unused']) ){
+			$data_file['unused'][$json['pathname']]= $json['unused'];
+		}
+		
+		if( $data_file['rules_length'][$json['pathname']] < $json['rules_length'] && count($data_file['unused'][$json['pathname']]) > count($json['unused']) ){
 			$data_file['unused'][$json['pathname']]= $json['unused'];
 		}
 	} else {
 		$data_file['unused'][$json['pathname']]= $json['unused'];
+	}
+
+	
+	if( $data_file['rules_length'][$json['pathname']] < $json['rules_length'] ){
+		$data_file['rules_length'][$json['pathname']]= $json['rules_length'];
 	}
 
 
@@ -69,6 +90,7 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 	} else {
 		$data_file['links']= $json['links'];
 	}
+	
 	$data_file['links']= array_unique($data_file['links']);
 
 
@@ -83,8 +105,9 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 	// Массив уже обойденных страниц
 	if( !isset($data_file['visited']) ) { 
 		$data_file['visited']= [];
-	} 
-	$data_file['visited'][]= $json['pathname'];
+	}
+	
+	if( !in_array($json['pathname'], $data_file['visited']) ) $data_file['visited'][]= $json['pathname'];
 
 
 	if($json['mode'] == 'auto'){
@@ -100,8 +123,14 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 		}
 	}
 	
+	
 	file_put_contents( $data."/data_file", serialize($data_file) );
-	die(json_encode(['status'=> 'complete', 'unused_length'=> count($data_file['unused'][$json['pathname']]) ]));
+	die(json_encode([
+		'status'=> 'complete', 
+		'unused_length'=> count($data_file['unused'][$json['pathname']]), 
+		'rules_length'=> $data_file['rules_length'][$json['pathname']] 
+	]));
+	
 }
 
 
@@ -185,8 +214,8 @@ function removeSelectors($oList) { // Удаление пустых и неис�
 						$delete= true;
 					
 						foreach($all_unused as $page=>$page_unused){ // Теряет нужные правила, пока отключить, добавить список обнаруженных правил, и по ним сверять. bag!
-							//if( isset($filesCSS_page[$page]) && $filesCSS_page[$page] == $file && !in_array($selector, $page_unused ) ){
-							//if( isset($filesCSS_page[$page]) && !in_array($selector, $page_unused ) ){
+							// if( isset($filesCSS_page[$page]) && $filesCSS_page[$page] == $file && !in_array($selector, $page_unused ) ){
+							// if( isset($filesCSS_page[$page]) && !in_array($selector, $page_unused ) ){
 							if( !in_array($selector, $page_unused ) ){
 								$delete= false;
 								break;
