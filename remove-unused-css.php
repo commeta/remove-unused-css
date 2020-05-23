@@ -79,7 +79,7 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 					file_put_contents( $data."/data_file", serialize($data_file) );
 					die(json_encode(['status'=> 'ok', 'location' => $link]));
 				} else {
-					$no_html[]= $link;
+					$data_file['no_html'][]= $link;
 				}
 			}
 		}
