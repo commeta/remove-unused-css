@@ -129,13 +129,14 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 	
 	$css_combine= "";
 	$created= [];
-	
+		
 	foreach($filesCSS as $file){
 		$path= parse_url($file)['path'];
 		$created[]= basename(__DIR__).'/css'.$path;
 		
 		if( !is_dir(__DIR__."/css/".dirname($path)) ) mkdir(__DIR__."/css/".dirname($path), 0755, true);
 		$path= __DIR__."/css".$path;
+		
 		
 		$sSource= file_get_contents($file);
 		$oParser= new Sabberworm\CSS\Parser($sSource);

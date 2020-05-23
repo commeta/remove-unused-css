@@ -70,11 +70,9 @@
 			
 			window.selectorStats.unused = unused;
 			
-			if(typeof( window.unused_length ) != "undefined" && window.unused_length != unused.length){
+			if(typeof( window.unused_length ) != "undefined" && window.unused_length > unused.length){
 				let saveCSSrules= document.getElementById("saveCSSrules");
-				if(saveCSSrules && window.unused_length > unused.length) {
-					saveCSSrules.disabled= false;
-				}
+				saveCSSrules.disabled= false;
 			}
 			
 			
@@ -262,8 +260,10 @@
 					continue;
 				}
 				
-				parsedRules.filesCSS.push(styleSheet.href);
-				parsedRules.filesCSS= array_unique(parsedRules.filesCSS);
+				if( styleSheet.href ){
+					parsedRules.filesCSS.push(styleSheet.href);
+					parsedRules.filesCSS= array_unique(parsedRules.filesCSS);
+				}
 				
 				for(var j = 0; j < rules.length; j++) {
 					var rule = rules[j];
