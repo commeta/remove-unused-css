@@ -251,14 +251,16 @@ function rel2abs( $rel, $base ) {
 	}
 
 	// dirty absolute URL
-	$abs = $host . $path . "/" . $rel;
+	//$abs = $host . $path . "/" . $rel;
+	$abs =  $path . "/" . $rel;
 
 	// replace '//' or  '/./' or '/foo/../' with '/'
 	$abs = preg_replace( "/(\/\.?\/)/", "/", $abs );
 	$abs = preg_replace( "/\/(?!\.\.)[^\/]+\/\.\.\//", "/", $abs );
 
 	// absolute URL is ready!
-	return $scheme . '://' . $abs;
+	//return $scheme . '://' . $abs;
+	return $abs;
 }
 
 ?>
