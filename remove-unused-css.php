@@ -152,8 +152,8 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 	}
 
 	// Генерирует общий файл, но надо заменить пути на абсолютные в пределах домена
-	$created[]= basename(__DIR__).'/css/remove-unused-css.min.css';
-	file_put_contents(__DIR__.'/css/remove-unused-css.min.css', $css_combine);
+	//$created[]= basename(__DIR__).'/css/remove-unused-css.min.css';
+	//file_put_contents(__DIR__.'/css/remove-unused-css.min.css', $css_combine);
 	
 	die(json_encode(['status'=> 'generate', 'created'=> $created ]));
 }
