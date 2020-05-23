@@ -63,13 +63,17 @@
 			var message = [];
 			if(unused.length !== window.selectorStats.unused.length) {
 				message.push(unused.length + ' unused');
-				if(document.getElementById("unused-css-rules").length > 0) document.getElementById("unused-css-rules").innerHTML= unused.length;
+				
+				let unusedcssrules= document.getElementById("unused-css-rules");
+				if(unusedcssrules) unusedcssrules.innerHTML= unused.length;
 			}
 			
 			window.selectorStats.unused = unused;
 			
 			if(typeof( window.unused_length ) != "undefined" && window.unused_length != unused.length){
-				if(document.getElementById("saveCSSrules").length > 0) document.getElementById("saveCSSrules").disabled= false;
+				let saveCSSrules= document.getElementById("saveCSSrules");
+				if(saveCSSrules) saveCSSrules.disabled= false;
+				
 				window.unused_length= unused.length;
 			}
 			
