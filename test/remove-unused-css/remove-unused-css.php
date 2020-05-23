@@ -20,83 +20,63 @@ if( !is_dir(__DIR__."/data") ) mkdir(__DIR__."/data", 0755, true);
 
 if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 	//if($_SERVER['REMOTE_ADDR'] != '127.0.0.1') die(json_encode([])); // Для запуска на продакшн, можно вписать свой ip
-
+	
+	if( file_exists($data."/data_file") ) { 
+		$data_file= unserialize( file_get_contents($data."/data_file") );
+	} else {
+		$data_file= [];
+	}
 
 	////////////////////////////////////////////////////////////////////////
 	// Массив файлов стилей
-	if( file_exists($data."/filesCSS") ) { 
-		$filesCSS= array_unique( array_merge(unserialize( file_get_contents($data."/filesCSS") ), $json['filesCSS']));
+	if( isset($data_file['filesCSS']) ) { 
+		$data_file['filesCSS']= array_unique( array_merge($data_file['filesCSS'], $json['filesCSS']));
 	} else {
-		$filesCSS= $json['filesCSS'];
+		$data_file['filesCSS']= $json['filesCSS'];
 	}
-	
-	file_put_contents( $data."/filesCSS", serialize($filesCSS) );
-	
 	
 	////////////////////////////////////////////////////////////////////////
 	// Массив файлов стилей, по страницам
-	//if( file_exists($data."/filesCSS_page") ) { 
-		//$filesCSS_page= unserialize( file_get_contents($data."/filesCSS_page") );
-	//} else {
-		//$filesCSS_page= [$json['pathname']=> $json['filesCSS']];
-	//}
 	
-	//$filesCSS_page[$json['pathname']]= $json['filesCSS'];
-	//file_put_contents( $data."/filesCSS_page", serialize($filesCSS_page) );
-	
-	
-	
-	
+
 	////////////////////////////////////////////////////////////////////////
 	// Массив неиспользуемых правил, по страницам
-	if( file_exists($data."/unused") ) { 
-		$unused= unserialize( file_get_contents($data."/unused") );
-	} else {
-		$unused= [$json['pathname']=>$json['unused']];
-	}
-
-	$unused[$json['pathname']]= $json['unused'];
-	file_put_contents( $data."/unused", serialize($unused) );
+	if( !isset($data_file['unused']) ){ 
+		$data_file['unused']= [$json['pathname']=>$json['unused']];
+	} 
+	$data_file['unused'][$json['pathname']]= $json['unused'];
 
 
 	////////////////////////////////////////////////////////////////////////
 	// Массив ссылок для обхода страниц
-	if( file_exists($data."/links") ) {
-		$links= array_merge( unserialize( file_get_contents($data."/links") ), $json['links'] );
+	if( isset($data_file['links']) ) {
+		$data_file['links']= array_merge( $data_file['links'], $json['links'] );
 	} else {
-		$links= $json['links'];
+		$data_file['links']= $json['links'];
 	}
-
-	$links= array_unique($links);
-	file_put_contents( $data."/links", serialize($links) );
+	$data_file['links']= array_unique($data_file['links']);
 
 
 	////////////////////////////////////////////////////////////////////////
 	// Массив файлов no html
-	if( file_exists($data."/no_html") ) { 
-		$no_html= unserialize( file_get_contents($data."/no_html") );
-	} else {
-		$no_html= [];
-	}
+	if(!isset($data_file['no_html'])) { 
+		$data_file['no_html']= [];
+	} 
+	
 	
 	////////////////////////////////////////////////////////////////////////
 	// Массив уже обойденных страниц
-	if( file_exists($data."/visited") ) { 
-		$visited= unserialize( file_get_contents($data."/visited") );
-	} else {
-		$visited= [];
-	}
-
-	$visited[]= $json['pathname'];
-	file_put_contents( $data."/visited", serialize($visited) );
+	if( !isset($data_file['visited']) ) { 
+		$data_file['visited']= [];
+	} 
+	$data_file['visited'][]= $json['pathname'];
 
 
 	if($json['mode'] == 'auto'){
-		foreach($links as $link){ // Посылаем в браузер следующую ссылку, если это html
-			if( !in_array($link, $visited) && !in_array($link, $no_html) ){
+		foreach($data_file['links'] as $link){ // Посылаем в браузер следующую ссылку, если это html
+			if( !in_array($link, $data_file['visited']) && !in_array($link, $data_file['no_html']) ){
 				if( strpos( get_headers($json['host'].$link, 1)['Content-Type'], 'text/html') !== false  ){
-					file_put_contents( $data."/no_html", serialize($no_html) );
-					
+					file_put_contents( $data."/data_file", serialize($data_file) );
 					die(json_encode(['status'=> 'ok', 'location' => $link]));
 				} else {
 					$no_html[]= $link;
@@ -105,7 +85,7 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 		}
 	}
 	
-	file_put_contents( $data."/no_html", serialize($no_html) );
+	file_put_contents( $data."/data_file", serialize($data_file) );
 	
 	
 	// Вернуть количество сохраненных элементов на этой странице, для сравнения в браузере
@@ -123,27 +103,16 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		}
 	});
 	
-	
-	if( file_exists($data."/filesCSS") ) { 
-		$filesCSS= unserialize( file_get_contents($data."/filesCSS") );
+	if( file_exists($data."/data_file") ) { 
+		$data_file= unserialize( file_get_contents($data."/data_file") );
+		
+		$filesCSS= $data_file['filesCSS'];
+		$all_unused= $data_file['unused'];
+		$filesCSS= $data_file['filesCSS'];
 	} else {
-		$filesCSS= [];
+		die(json_encode(['status'=>'error']));
 	}
-	
-	/*
-	if( file_exists($data."/filesCSS_page") ) { 
-		$filesCSS_page= unserialize( file_get_contents($data."/filesCSS_page") );
-	} else {
-		$filesCSS_page= [];
-	}
-	*/
-	
-	if( file_exists($data."/unused") ) { 
-		$all_unused= unserialize( file_get_contents($data."/unused") );
-	} else {
-		$all_unused= [];
-	}
-	
+		
 	
 	$css_combine= "";
 	$created= [];
