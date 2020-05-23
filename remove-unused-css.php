@@ -53,7 +53,7 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 		$data_file['unused']= [$json['pathname']=>$json['unused']];
 	}
 	
-	if( isset($data_file['unused'][$json['pathname']]) ){
+	if( isset($data_file['unused'][$json['pathname']]) ){ // Сначала сверить со списком использованных! bug!
 		if( count($data_file['unused'][$json['pathname']]) > count($json['unused']) ){
 			$data_file['unused'][$json['pathname']]= $json['unused'];
 		}
@@ -184,7 +184,7 @@ function removeSelectors($oList) { // Удаление пустых и неис�
 					if(is_array($isPresent) && count($isPresent) > 0) {
 						$delete= true;
 					
-						foreach($all_unused as $page=>$page_unused){ // Теряет нужные правила, пока отключить, добавить список обнаруженных правил, и по ним сверять
+						foreach($all_unused as $page=>$page_unused){ // Теряет нужные правила, пока отключить, добавить список обнаруженных правил, и по ним сверять. bag!
 							//if( isset($filesCSS_page[$page]) && $filesCSS_page[$page] == $file && !in_array($selector, $page_unused ) ){
 							//if( isset($filesCSS_page[$page]) && !in_array($selector, $page_unused ) ){
 							if( !in_array($selector, $page_unused ) ){

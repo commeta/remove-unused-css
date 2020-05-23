@@ -71,7 +71,7 @@
 			window.selectorStats.unused = unused;
 			
 			if(typeof( window.unused_length ) != "undefined" && window.unused_length > unused.length){
-				let saveCSSrules= document.getElementById("saveCSSrules");
+				let saveCSSrules= document.getElementById("saveCSSrules"); // bag!
 				saveCSSrules.disabled= false;
 			}
 			
@@ -162,7 +162,7 @@
 							<button onclick="window.save_css('generate')">Сгенерировать файлы</button>
 						`;
 						
-						// Глючит, т.к. добавляются новые правила уже после сохранения, исправить!
+						// Глючит, т.к. добавляются новые правила уже после сохранения, исправить! bag!
 						document.getElementById("saveCSSrules").disabled = true;
 						
 						window.unused_length= data.unused_length;
