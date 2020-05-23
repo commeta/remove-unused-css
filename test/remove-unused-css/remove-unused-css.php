@@ -148,13 +148,31 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		$data_file= unserialize( file_get_contents($data."/data_file") );
 		
 		$filesCSS= $data_file['filesCSS'];
-		$all_unused= $data_file['unused'];
+		$unused= $data_file['unused'];
 		$filesCSS_page= $data_file['filesCSS_page'];
 	} else {
 		die(json_encode(['status'=>'error']));
 	}
-		
 	
+	$all_unused= [];
+	
+	foreach($unused as $page=>$page_unused){
+		foreach($page_unused as $selector){
+			$delete= true;
+			
+			foreach($unused as $v){
+				if( !in_array($selector, $v ) ){
+					$delete= false;
+					break;
+				}
+			}
+			
+			if($delete) $all_unused[]= $selector;
+		}
+	}
+	
+	
+	$removed= 0;
 	$css_combine= "";
 	$created= [];
 		
@@ -169,13 +187,14 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		$sSource= file_get_contents($file);
 		$oParser= new Sabberworm\CSS\Parser($sSource);
 		$oCss= $oParser->parse();
+		$text_css= $oCss->render(Sabberworm\CSS\OutputFormat::createCompact()); // createPretty - читаемый вид, createCompact - минифицированный
 		
-		removeSelectors($oCss);
+		//removeSelectors($oCss);
+		// Сделать удаление правил на регулярках!
 		
-		file_put_contents( 
-			$path,
-			$oCss->render(Sabberworm\CSS\OutputFormat::createCompact()) // createPretty - читаемый вид, createCompact - минифицированный
-		);
+		
+		
+		file_put_contents( $path, $text_css );
 		
 		$css_combine.= preg_replace_callback( // Заменить пути на относительные от корня домена
 			'/url\("([^)]*)"\)/',
@@ -191,13 +210,13 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 	$created[]= basename(__DIR__).'/css/remove-unused-css.min.css';
 	file_put_contents(__DIR__.'/css/remove-unused-css.min.css', $css_combine);
 	
-	die(json_encode(['status'=> 'generate', 'created'=> $created ]));
+	die(json_encode(['status'=> 'generate', 'created'=> $created, 'removed'=> $removed]));
 }
 
 
 
 function removeSelectors($oList) { // Удаление пустых и неиспользуемых селекторов
-	global $all_unused, $file, $filesCSS_page;
+	global $all_unused, $file, $filesCSS_page, $removed;
 	
 	foreach ($oList->getContents() as $oBlock) {
 		if($oBlock instanceof Sabberworm\CSS\RuleSet\DeclarationBlock) {
@@ -209,11 +228,12 @@ function removeSelectors($oList) { // Удаление пустых и неис�
 					$selector= preg_replace('/[\s]{2,}/', ' ', $oSelector->getSelector() );
 					
 					$delete= false;
+					
 					$isPresent= array_filter($all_unused, fn($v) => in_array($selector, $v) );
 					if(is_array($isPresent) && count($isPresent) > 0) {
 						$delete= true;
 					
-						foreach($all_unused as $page=>$page_unused){ // Теряет нужные правила, пока отключить, добавить список обнаруженных правил, и по ним сверять. bag!
+						foreach($all_unused as $page=>$page_unused){ // Теряет нужные правила, пока отключить. bag!
 							// if( isset($filesCSS_page[$page]) && $filesCSS_page[$page] == $file && !in_array($selector, $page_unused ) ){
 							// if( isset($filesCSS_page[$page]) && !in_array($selector, $page_unused ) ){
 							if( !in_array($selector, $page_unused ) ){
@@ -224,7 +244,13 @@ function removeSelectors($oList) { // Удаление пустых и неис�
 					}
 					
 					if($delete){
+						$removed++;
 						$oList->remove($oBlock);
+						/*
+						foreach($oList->getAllRuleSets() as $oRuleSet) {
+							if( key($oRuleSet->getRulesAssoc()) !== null ) $oRuleSet->removeRule(key($oRuleSet->getRulesAssoc()));
+						}
+						*/						
 					}
 				}
 			}
