@@ -75,8 +75,6 @@
 				if(saveCSSrules && window.unused_length > unused.length) {
 					saveCSSrules.disabled= false;
 				}
-				
-				//window.unused_length= unused.length;
 			}
 			
 			
