@@ -151,7 +151,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		$css_combine.= $oCss->render(Sabberworm\CSS\OutputFormat::createCompact());
 	}
 
-	
+	// Генерирует общий файл, но надо заменить пути на абсолютные в пределах домена
 	$created[]= basename(__DIR__).'/css/remove-unused-css.min.css';
 	file_put_contents(__DIR__.'/css/remove-unused-css.min.css', $css_combine);
 	
@@ -193,8 +193,8 @@ function removeSelectors($oList) { // Удаление пустых и неис�
 					if(is_array($isPresent) && count($isPresent) > 0) {
 						$delete= true;
 					
-						foreach($all_unused as $k=>$page){
-							if( isset($filesCSS_page[$k]) && $filesCSS_page[$k] == $file && !in_array($selector, $page ) ){
+						foreach($all_unused as $page=>$page_unused){
+							if( isset($filesCSS_page[$page]) && $filesCSS_page[$page] == $file && !in_array($selector, $page_unused ) ){
 								$delete= false;
 								break;
 							}
