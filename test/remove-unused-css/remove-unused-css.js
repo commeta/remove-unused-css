@@ -74,13 +74,13 @@
 			
 			if(typeof( window.unused_length ) != "undefined" && window.unused_length > unused.length){
 				let saveCSSrules= document.getElementById("saveCSSrules"); 
-				saveCSSrules.disabled= false;
+				if(saveCSSrules) saveCSSrules.disabled= false;
 			}
 			
 			if(typeof( window.unused_length ) != "undefined" && window.rules_length < parsedCssRules.style.length){
 				window.rules_length= parsedCssRules.style.length;
 				let saveCSSrules= document.getElementById("saveCSSrules"); 
-				saveCSSrules.disabled= false;
+				if(saveCSSrules) saveCSSrules.disabled= false;
 			}
 			
 			
