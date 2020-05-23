@@ -156,7 +156,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 	
 	$all_unused= [];
 	
-	foreach($unused as $page=>$page_unused){
+	foreach($unused as $page=>$page_unused){ // Сделать для каждого файла свой массив, по страницам где этот файл присутствует
 		foreach($page_unused as $selector){
 			$delete= true;
 			
