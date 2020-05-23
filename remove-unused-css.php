@@ -5,6 +5,8 @@
  * Copyright 2020 Commeta
  * Released under the GPL v3 or MIT license
  * 
+ * System requirements: PHP 7.4
+ * 
  * Use forked library: PHP CSS Parser
  * https://github.com/sabberworm/PHP-CSS-Parser
  * 
@@ -27,6 +29,7 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 		$data_file= [];
 	}
 
+
 	////////////////////////////////////////////////////////////////////////
 	// Массив файлов стилей
 	if( isset($data_file['filesCSS']) ) { 
@@ -35,8 +38,13 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 		$data_file['filesCSS']= $json['filesCSS'];
 	}
 	
+	
 	////////////////////////////////////////////////////////////////////////
 	// Массив файлов стилей, по страницам
+	//if( !isset($data_file['filesCSS_page']) ){ 
+		//$data_file['filesCSS_page']= [$json['pathname']=>$json['filesCSS']];
+	//} 
+	//$data_file['filesCSS_page'][$json['pathname']]= $json['filesCSS'];
 	
 
 	////////////////////////////////////////////////////////////////////////
@@ -86,9 +94,6 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 	}
 	
 	file_put_contents( $data."/data_file", serialize($data_file) );
-	
-	
-	// Вернуть количество сохраненных элементов на этой странице, для сравнения в браузере
 	die(json_encode(['status'=> 'complete']));
 }
 
@@ -179,7 +184,7 @@ function removeSelectors($oList) { // Удаление пустых и неис�
 					$isPresent= array_filter($all_unused, fn($v) => in_array($selector, $v) );
 					if(is_array($isPresent) && count($isPresent) > 0) $delete= true;
 					
-					if($delete){ // Добавить проверку есть ли этот файл стиля на странице
+					if($delete){
 						foreach($all_unused as $page){
 							if( !in_array($selector, $page) ){
 								$delete= false;
