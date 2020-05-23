@@ -148,12 +148,12 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 			$oCss->render(Sabberworm\CSS\OutputFormat::createPretty())
 		);
 		
-		$css_combine.= $oCss->render(Sabberworm\CSS\OutputFormat::createCompact());
+		$css_combine.= parseURL($oCss->render(Sabberworm\CSS\OutputFormat::createCompact()));
 	}
 
 	// Генерирует общий файл, но надо заменить пути на абсолютные в пределах домена
-	//$created[]= basename(__DIR__).'/css/remove-unused-css.min.css';
-	//file_put_contents(__DIR__.'/css/remove-unused-css.min.css', $css_combine);
+	$created[]= basename(__DIR__).'/css/remove-unused-css.min.css';
+	file_put_contents(__DIR__.'/css/remove-unused-css.min.css', $css_combine);
 	
 	die(json_encode(['status'=> 'generate', 'created'=> $created ]));
 }
@@ -215,5 +215,55 @@ function removeSelectors($oList) { // Удаление пустых и неис�
 	}
 }
 
+function parseURL($str){
+    $str = preg_replace_callback(
+        '/url\("([^)]*)"\)/',
+        function ($matches) {
+			global $file;
+            return sprintf('url("%s")',rel2abs($matches[1], $file));
+        },
+        $str
+    );
+	return $str;
+}
+
+
+function rel2abs( $rel, $base ) {
+	// parse base URL  and convert to local variables: $scheme, $host,  $path
+	// http://www.gambit.ph/converting-relative-urls-to-absolute-urls-in-php/
+	extract( parse_url( $base ) );
+
+	if ( strpos( $rel,"//" ) === 0 ) {
+		return $scheme . ':' . $rel;
+	}
+
+	// return if already absolute URL
+	if ( parse_url( $rel, PHP_URL_SCHEME ) != '' ) {
+		return $rel;
+	}
+
+	// queries and anchors
+	if ( $rel[0] == '#' || $rel[0] == '?' ) {
+		return $base . $rel;
+	}
+
+	// remove non-directory element from path
+	$path = preg_replace( '#/[^/]*$#', '', $path );
+
+	// destroy path if relative url points to root
+	if ( $rel[0] ==  '/' ) {
+		$path = '';
+	}
+
+	// dirty absolute URL
+	$abs = $host . $path . "/" . $rel;
+
+	// replace '//' or  '/./' or '/foo/../' with '/'
+	$abs = preg_replace( "/(\/\.?\/)/", "/", $abs );
+	$abs = preg_replace( "/\/(?!\.\.)[^\/]+\/\.\.\//", "/", $abs );
+
+	// absolute URL is ready!
+	return $scheme . '://' . $abs;
+}
 
 ?>
