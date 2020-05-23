@@ -202,7 +202,8 @@ function removeSelectors($oList) { // Удаление пустых и неис�
 						$delete= true;
 					
 						foreach($all_unused as $page=>$page_unused){
-							if( isset($filesCSS_page[$page]) && $filesCSS_page[$page] == $file && !in_array($selector, $page_unused ) ){
+							//if( isset($filesCSS_page[$page]) && $filesCSS_page[$page] == $file && !in_array($selector, $page_unused ) ){
+							if( !in_array($selector, $page_unused ) ){
 								$delete= false;
 								break;
 							}

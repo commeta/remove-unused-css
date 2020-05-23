@@ -180,6 +180,9 @@
 			}).catch(() => console.log('ошибка'));
 		}
 		
+		window.addEventListener("unload", function() {
+			window.save_css(true);
+		});
 		
 		setInterval(function() {
 			scanRules();
@@ -193,6 +196,9 @@
 			window.save_css(true);
 		}, 1500);
 
+		window.addEventListener("unload", function() {
+			window.save_css(true);
+		});
 
 		function array_unique(arr) {
 			var seen = {};
