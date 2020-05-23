@@ -146,7 +146,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		
 		file_put_contents( 
 			$path,
-			$oCss->render(Sabberworm\CSS\OutputFormat::createPretty())
+			$oCss->render(Sabberworm\CSS\OutputFormat::createCompact()) // createPretty - читаемый вид, createCompact - минифицированный
 		);
 		
 		$css_combine.= preg_replace_callback( // Заменить пути на относительные от корня домена
@@ -201,8 +201,9 @@ function removeSelectors($oList) { // Удаление пустых и неис�
 					if(is_array($isPresent) && count($isPresent) > 0) {
 						$delete= true;
 					
-						foreach($all_unused as $page=>$page_unused){
+						foreach($all_unused as $page=>$page_unused){ // Теряет нужные правила, пока отключить
 							//if( isset($filesCSS_page[$page]) && $filesCSS_page[$page] == $file && !in_array($selector, $page_unused ) ){
+							//if( isset($filesCSS_page[$page]) && !in_array($selector, $page_unused ) ){
 							if( !in_array($selector, $page_unused ) ){
 								$delete= false;
 								break;
