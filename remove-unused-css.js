@@ -185,7 +185,11 @@
 							files += '<br />' + file;
 						});
 						
+						let removed= '';
+						if(typeof( data.removed ) != "undefined" && data.removed > 0) removed= `Удалено: ${data.removed} классов, `;
+						
 						document.getElementById("manual-mode").innerHTML= `
+							${removed} 
 							Сгенерированы новые css файлы: ${files}
 						`;
 					}

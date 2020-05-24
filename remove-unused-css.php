@@ -32,7 +32,7 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 	if( !isset($data_file['complete']) ) $data_file['complete']= 'auto';
 	
 	if( $data_file['complete'] == 'generate' ) {
-		die(json_encode(['status'=> 'generate', 'created'=> [], 'removed'=> [] ]));
+		die(json_encode(['status'=> 'generate', 'created'=> [], 'removed'=> 0 ]));
 	}
 	
 	////////////////////////////////////////////////////////////////////////
@@ -205,7 +205,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 						// Проверить присутствие селектора в файле, чтобы сократить время обработки!
 						if( !in_array($selector, $data_file['rules_files'][$file]) ) continue;
 						
-						if(check_present($data_file['unused'], $selector, $pages)) {
+						if(check_present($data_file['unused'], $selector, $pages, $data_file['rules_files'][$file])) {
 							if( !in_array($selector, $all_unused_file) ) {
 								$all_unused_file[]= $selector;
 								$removed++;
@@ -276,14 +276,17 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 }
 
 
-function check_present($unused, $selector, $pages){
+function check_present($unused, $selector, $pages, $file_css){
 	$delete= true;
 	foreach($unused as $k=>$v){
 		if( !in_array($k, $pages) ) continue;
-			
+		
+		if( !in_array($selector, $file_css ) ){
+			return false;
+		}
+		
 		if( !in_array($selector, $v ) ){
-			$delete= false;
-			break;
+			return false;
 		}
 	}
 	return $delete;
