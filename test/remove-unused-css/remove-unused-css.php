@@ -172,45 +172,10 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		$data_file= unserialize( file_get_contents($data."/data_file") );
 		
 		$filesCSS= $data_file['filesCSS'];
-		$unused= $data_file['unused'];
-		$filesCSS_page= $data_file['filesCSS_page'];
+		//$unused= $data_file['unused'];
+		//$filesCSS_page= $data_file['filesCSS_page'];
 	} else {
 		die(json_encode(['status'=>'error']));
-	}
-	
-	
-	
-	/*
-	$all_unused= [];
-	foreach($unused as $page=>$page_unused){ // Сделать для каждого файла свой массив, по страницам где этот файл присутствует
-		foreach($page_unused as $selector){
-			$delete= true;
-			
-			foreach($unused as $v){
-				if( !in_array($selector, $v ) ){
-					$delete= false;
-					break;
-				}
-			}
-			
-			if($delete) $all_unused[]= $selector;
-		}
-	}
-	*/
-	
-	function check_present($unused, $selector, $pages){
-		$delete= true;
-		
-		foreach($unused as $k=>$v){
-			if( !in_array($k, $pages) ) continue;
-			
-			if( !in_array($selector, $v ) ){
-				$delete= false;
-				break;
-			}
-		}
-		
-		return $delete;
 	}
 	
 	
@@ -222,11 +187,11 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		$isPresent= array_filter($data_file['filesCSS_page'], fn($v) => in_array($file, $v) );
 		$pages= array_keys($isPresent);
 		
-			
+		
 		if( is_array($pages) && count($pages) > 0 ){
 			foreach($pages as $page){
 				if( isset($data_file['unused'][$page]) ){
-					foreach($data_file['unused'][$page] as $selector){
+					foreach($data_file['unused'][$page] as $selector){ // Проверить присутствие селектора в файле, чтобы сократить время обработки!
 						if(check_present($data_file['unused'], $selector, $pages)) $all_unused_file[]= $selector;
 					}
 				}
@@ -237,7 +202,6 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		$all_unused[$file]= array_unique($all_unused_file);
 	}
 	
-
 	
 	$removed= 0;
 	$css_combine= "";
@@ -293,6 +257,20 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 	
 	
 	die(json_encode(['status'=> 'generate', 'created'=> $created, 'removed'=> $removed]));
+}
+
+
+function check_present($unused, $selector, $pages){
+	$delete= true;
+	foreach($unused as $k=>$v){
+		if( !in_array($k, $pages) ) continue;
+			
+		if( !in_array($selector, $v ) ){
+			$delete= false;
+			break;
+		}
+	}
+	return $delete;
 }
 
 
