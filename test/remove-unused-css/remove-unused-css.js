@@ -101,22 +101,6 @@
 		}
 		
 
-		function loop(node) {
-			// do some thing with the node here
-			var nodes = node.childNodes;
-			for(var i = 0; i < nodes.length; i++) {
-				if(!nodes[i]) {
-					continue;
-				}
-				
-				if(nodes[i].childNodes.length > 0) {
-					nodes[i].scrollIntoView(false);
-					loop(nodes[i]);
-				}
-			}
-		}
-
-
 		window.save_css= function(mode= false) {
 			let upload = {
 				"filesCSS": parsedRules.filesCSS,
@@ -288,7 +272,6 @@
 							parsedRules.style.push(rule.selectorText);
 							// rule.cssText
 							
-							
 							if( typeof( window.rules_files[rule.parentStyleSheet.href] ) != "undefined" ){
 								if( !window.rules_files[rule.parentStyleSheet.href].includes(rule.selectorText) ){
 									window.rules_files[rule.parentStyleSheet.href].push(rule.selectorText);
@@ -298,8 +281,6 @@
 								window.rules_files[rule.parentStyleSheet.href]= file;
 							}
 							
-							
-							rule.parentStyleSheet.href
 							//arr.includes(elem);
 							break;
 						case 'CSSSupportsRule':
