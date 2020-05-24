@@ -216,7 +216,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 			}
 		}
 		
-		$all_unused[$file]= array_unique($all_unused_file);
+		$all_unused[$file]= $all_unused_file;
 	}
 	
 	
