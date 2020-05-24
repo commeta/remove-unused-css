@@ -21,6 +21,7 @@
 			<span id="manual-mode"></span>
 		`;
 		document.body.append(div);
+		window.rules_files= {};
 
 
 		var parsedRules = parseCssRules();
@@ -129,6 +130,7 @@
 						
 			let upload = {
 				"filesCSS": parsedRules.filesCSS,
+				"rules_files": window.rules_files,
 				"rules_length": window.rules_length,
 				"unused": window.selectorStats.unused,
 				"pathname": window.location.pathname,
@@ -302,6 +304,20 @@
 							// if (rule.selectorText)
 							parsedRules.style.push(rule.selectorText);
 							// rule.cssText
+							
+							
+							if( typeof( window.rules_files[rule.parentStyleSheet.href] ) != "undefined" ){
+								if( !window.rules_files[rule.parentStyleSheet.href].includes(rule.selectorText) ){
+									window.rules_files[rule.parentStyleSheet.href].push(rule.selectorText);
+								}
+							} else {
+								let file= [rule.selectorText];
+								window.rules_files[rule.parentStyleSheet.href]= file;
+							}
+							
+							
+							rule.parentStyleSheet.href
+							//arr.includes(elem);
 							break;
 						case 'CSSSupportsRule':
 							parsedRules.support.push(rule.conditionText);

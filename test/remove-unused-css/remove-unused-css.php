@@ -35,13 +35,22 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 		die(json_encode(['status'=> 'generate', 'created'=> [], 'removed'=> [] ]));
 	}
 	
+	////////////////////////////////////////////////////////////////////////
+	// 	Массив классов в файле
+	if( !isset($data_file['rules_files']) ) $data_file['rules_files']= [];
 	
-	
+	foreach($json['rules_files'] as $file=>$rules){
+		if( !isset($data_file['rules_files'][$file]) ) $data_file['rules_files'][$file]= [];
+		
+		foreach($rules as $rule){
+			if( !in_array($rule, $data_file['rules_files'][$file]) ) $data_file['rules_files'][$file][]= $rule;
+		}
+	}
 	
 	
 	
 	////////////////////////////////////////////////////////////////////////
-	// 	
+	// 	Общая количество кcss лассов 
 	if( !isset($data_file['rules_length']) ){ 
 		$data_file['rules_length']= [];
 	} 
@@ -172,30 +181,38 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		$data_file= unserialize( file_get_contents($data."/data_file") );
 		
 		$filesCSS= $data_file['filesCSS'];
-		//$unused= $data_file['unused'];
-		//$filesCSS_page= $data_file['filesCSS_page'];
 	} else {
 		die(json_encode(['status'=>'error']));
 	}
 	
 	
+	$removed= 0;
 	$all_unused= [];
 	
-	foreach($filesCSS as $file){
+	foreach($filesCSS as $file){ // Раскидаем по файлам правила для удаления
 		$all_unused[$file]= [];
 		
 		$isPresent= array_filter($data_file['filesCSS_page'], fn($v) => in_array($file, $v) );
 		$pages= array_keys($isPresent);
 		
 		
+		$all_unused_file= [];
+		
 		if( is_array($pages) && count($pages) > 0 ){
 			foreach($pages as $page){
 				if( isset($data_file['unused'][$page]) ){
-					foreach($data_file['unused'][$page] as $selector){ // Проверить присутствие селектора в файле, чтобы сократить время обработки!
-						if(check_present($data_file['unused'], $selector, $pages)) $all_unused_file[]= $selector;
+					foreach($data_file['unused'][$page] as $selector){ 
+						// Проверить присутствие селектора в файле, чтобы сократить время обработки!
+						if( !in_array($selector, $data_file['rules_files'][$file]) ) continue;
+						
+						if(check_present($data_file['unused'], $selector, $pages)) {
+							if( !in_array($selector, $all_unused_file) ) {
+								$all_unused_file[]= $selector;
+								$removed++;
+							}
+						}
 					}
 				}
-				
 			}
 		}
 		
@@ -203,7 +220,6 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 	}
 	
 	
-	$removed= 0;
 	$css_combine= "";
 	$created= [];
 		
