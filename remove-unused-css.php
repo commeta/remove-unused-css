@@ -120,6 +120,7 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 	if( !in_array($json['pathname'], $data_file['visited']) ) $data_file['visited'][]= $json['pathname'];
 
 
+
 	if( $data_file['complete'] == 'manual' ) {
 		die(json_encode([
 			'status'=> 'complete', 
@@ -177,8 +178,10 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		die(json_encode(['status'=>'error']));
 	}
 	
-	$all_unused= [];
 	
+	
+	/*
+	$all_unused= [];
 	foreach($unused as $page=>$page_unused){ // Сделать для каждого файла свой массив, по страницам где этот файл присутствует
 		foreach($page_unused as $selector){
 			$delete= true;
@@ -193,7 +196,48 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 			if($delete) $all_unused[]= $selector;
 		}
 	}
+	*/
 	
+	function check_present($unused, $selector, $pages){
+		$delete= true;
+		
+		foreach($unused as $k=>$v){
+			if( !in_array($k, $pages) ) continue;
+			
+			if( !in_array($selector, $v ) ){
+				$delete= false;
+				break;
+			}
+		}
+		
+		return $delete;
+	}
+	
+	
+	$all_unused= [];
+	
+	foreach($filesCSS as $file){
+		$all_unused[$file]= [];
+		
+		$isPresent= array_filter($data_file['filesCSS_page'], fn($v) => in_array($file, $v) );
+		$pages= array_keys($isPresent);
+		
+			
+		if( is_array($pages) && count($pages) > 0 ){
+			foreach($pages as $page){
+				if( isset($data_file['unused'][$page]) ){
+					foreach($data_file['unused'][$page] as $selector){
+						if(check_present($data_file['unused'], $selector, $pages)) $all_unused_file[]= $selector;
+					}
+				}
+				
+			}
+		}
+		
+		$all_unused[$file]= array_unique($all_unused_file);
+	}
+	
+
 	
 	$removed= 0;
 	$css_combine= "";
@@ -207,18 +251,20 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		$path= __DIR__."/css".$path;
 		
 		
+		// Прогоним через парсер, удалим ошибки, и нормализуем формат.
 		$sSource= file_get_contents($file);
 		$oParser= new Sabberworm\CSS\Parser($sSource);
 		$oCss= $oParser->parse();
-		//removeSelectors($oCss);
+		removeSelectors($oCss);
 		
 		$text_css= "\n".$oCss->render(Sabberworm\CSS\OutputFormat::createPretty()); // createPretty - читаемый вид, createCompact - минифицированный
 		
 		
 		// Удаление правил на регулярках!
-		foreach($all_unused as $class){
+		foreach($all_unused[$file] as $class){
 			$text_css= preg_replace( sprintf('/\n\s?\t?(%s\s*\{[^\}]*?})/', preg_quote($class)), "\n", $text_css );
 		}
+		
 		
 		// Минификация
 		$oParser= new Sabberworm\CSS\Parser($text_css);
