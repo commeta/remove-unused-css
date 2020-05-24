@@ -133,7 +133,7 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 	
 }
 
-// Добавить возможность из панели управления замены исходных правил, с возможностью восстановления из резервной копии
+// Добавить в коммерческой версии, возможность из панели управления замены исходных правил, с возможностью восстановления из резервной копии
 
 
 if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, без неиспользуемых стилей
@@ -188,11 +188,20 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		$sSource= file_get_contents($file);
 		$oParser= new Sabberworm\CSS\Parser($sSource);
 		$oCss= $oParser->parse();
-		$text_css= $oCss->render(Sabberworm\CSS\OutputFormat::createCompact()); // createPretty - читаемый вид, createCompact - минифицированный
-		
 		//removeSelectors($oCss);
-		// Сделать удаление правил на регулярках!
 		
+		$text_css= "\n".$oCss->render(Sabberworm\CSS\OutputFormat::createPretty()); // createPretty - читаемый вид, createCompact - минифицированный
+		
+		
+		// Удаление правил на регулярках!
+		foreach($all_unused as $class){
+			$text_css= preg_replace( sprintf('/\n\s?\t?(%s\s*\{[^\}]*?})/', preg_quote($class)), "\n", $text_css );
+		}
+		
+		
+		$oParser= new Sabberworm\CSS\Parser($text_css);
+		$oCss= $oParser->parse();
+		$text_css= $oCss->render(Sabberworm\CSS\OutputFormat::createCompact()); // createPretty - читаемый вид, createCompact - минифицированный
 		
 		
 		file_put_contents( $path, $text_css );
@@ -203,7 +212,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 				global $file;
 				return sprintf('url("%s")',rel2abs($matches[1], $file));
 			},
-			$oCss->render(Sabberworm\CSS\OutputFormat::createCompact())
+			$text_css
 		);
 	}
 
@@ -217,43 +226,10 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 
 
 function removeSelectors($oList) { // Удаление пустых и неиспользуемых селекторов
-	global $all_unused, $file, $filesCSS_page, $removed;
-	
 	foreach ($oList->getContents() as $oBlock) {
 		if($oBlock instanceof Sabberworm\CSS\RuleSet\DeclarationBlock) {
 			if ( empty($oBlock->getRules()) ) {
 				$oList->remove( $oBlock );
-			} else {
-				foreach($oBlock->getSelectors() as $oSelector) {
-					//Loop over all selector parts (the comma-separated strings in a selector) and prepend the id
-					$selector= preg_replace('/[\s]{2,}/', ' ', $oSelector->getSelector() );
-					
-					$delete= false;
-					
-					$isPresent= array_filter($all_unused, fn($v) => in_array($selector, $v) );
-					if(is_array($isPresent) && count($isPresent) > 0) {
-						$delete= true;
-					
-						foreach($all_unused as $page=>$page_unused){ // Теряет нужные правила, пока отключить. bag!
-							// if( isset($filesCSS_page[$page]) && $filesCSS_page[$page] == $file && !in_array($selector, $page_unused ) ){
-							// if( isset($filesCSS_page[$page]) && !in_array($selector, $page_unused ) ){
-							if( !in_array($selector, $page_unused ) ){
-								$delete= false;
-								break;
-							}
-						}
-					}
-					
-					if($delete){
-						$removed++;
-						$oList->remove($oBlock);
-						/*
-						foreach($oList->getAllRuleSets() as $oRuleSet) {
-							if( key($oRuleSet->getRulesAssoc()) !== null ) $oRuleSet->removeRule(key($oRuleSet->getRulesAssoc()));
-						}
-						*/						
-					}
-				}
 			}
 		} else if($oBlock instanceof Sabberworm\CSS\CSSList\CSSBlockList) {
 			removeSelectors($oBlock);
@@ -268,6 +244,12 @@ function removeSelectors($oList) { // Удаление пустых и неис�
 function rel2abs( $rel, $base ) {
 	// parse base URL  and convert to local variables: $scheme, $host,  $path
 	// http://www.gambit.ph/converting-relative-urls-to-absolute-urls-in-php/
+	
+	if ( strpos( $rel, "data" ) === 0 ) {
+		return $rel;
+	}
+	
+	
 	extract( parse_url( $base ) );
 
 	if ( strpos( $rel,"//" ) === 0 ) {
