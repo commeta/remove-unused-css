@@ -148,11 +148,13 @@
 				return response.json();
 			}).then(function(data) {
 				if(typeof( data.status ) != "undefined"){
+					let buttons= `
+						<button id="saveCSSrules" onclick="window.save_css()">Сохранить правила</button>
+						<button onclick="window.save_css('generate')">Сгенерировать файлы</button>
+					`;
+					
 					if(data.status == "complete"){
-						document.getElementById("manual-mode").innerHTML= `
-							<button id="saveCSSrules" onclick="window.save_css()">Сохранить правила</button>
-							<button onclick="window.save_css('generate')">Сгенерировать файлы</button>
-						`;
+						document.getElementById("manual-mode").innerHTML= buttons;
 						
 						document.getElementById("saveCSSrules").disabled= true;
 						
@@ -166,7 +168,7 @@
 							files += '<br />' + file;
 						});
 						
-						let removed= '';
+						let removed= buttons;
 						if(typeof( data.removed ) != "undefined" && data.removed > 0) removed= `Удалено: ${data.removed} классов, `;
 						
 						document.getElementById("manual-mode").innerHTML= `
