@@ -198,11 +198,10 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 			$text_css= preg_replace( sprintf('/\n\s?\t?(%s\s*\{[^\}]*?})/', preg_quote($class)), "\n", $text_css );
 		}
 		
-		
+		// Минификация
 		$oParser= new Sabberworm\CSS\Parser($text_css);
 		$oCss= $oParser->parse();
 		$text_css= $oCss->render(Sabberworm\CSS\OutputFormat::createCompact()); // createPretty - читаемый вид, createCompact - минифицированный
-		
 		
 		file_put_contents( $path, $text_css );
 		
