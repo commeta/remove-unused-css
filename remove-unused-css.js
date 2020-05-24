@@ -118,16 +118,6 @@
 
 
 		window.save_css= function(mode= false) {
-			let links= [];
-			links.push( window.location.pathname );
-			
-			let a= document.getElementsByTagName('a');
-			for(var i = 0; i < a.length; i++) {
-				if( typeof( a[i].hostname ) != "undefined" && typeof( a[i].pathname ) != "undefined" && window.location.hostname == a[i].hostname ){
-					links.push( a[i].pathname );
-				}
-			}
-						
 			let upload = {
 				"filesCSS": parsedRules.filesCSS,
 				"rules_files": window.rules_files,
@@ -135,14 +125,10 @@
 				"unused": window.selectorStats.unused,
 				"pathname": window.location.pathname,
 				"host":  window.location.protocol + "//" + window.location.hostname,
-				"links": array_unique(links),
 				"mode": "save"
 			};
 			
 			
-			//window.unused_length= window.selectorStats.unused.length;
-			
-			if(mode === true) upload['mode']= "auto";
 			if(mode == 'generate') {
 				upload['mode']= "generate";
 				document.getElementById("manual-mode").innerHTML= `Файлы генерируются, ждите...`;
@@ -161,19 +147,14 @@
 				}
 				return response.json();
 			}).then(function(data) {
-				if(typeof( data.location ) != "undefined"){
-					window.location.href= data.location;
-				}
-				
 				if(typeof( data.status ) != "undefined"){
 					if(data.status == "complete"){
 						document.getElementById("manual-mode").innerHTML= `
-							Автоматический захват правил закончен, ручной режим:
 							<button id="saveCSSrules" onclick="window.save_css()">Сохранить правила</button>
 							<button onclick="window.save_css('generate')">Сгенерировать файлы</button>
 						`;
 						
-						document.getElementById("saveCSSrules").disabled = true;
+						document.getElementById("saveCSSrules").disabled= true;
 						
 						window.unused_length= data.unused_length;
 						window.rules_length= data.rules_length;
@@ -197,18 +178,13 @@
 			}).catch(() => console.log('ошибка'));
 		}
 		
-		window.addEventListener("unload", function() {
-			window.save_css(true);
-		});
 		
 		setInterval(function() {
 			scanRules();
 		}, 1000);
 		
-		loop(document.body);
 		
 		setTimeout(function() { // wait 1s, and restart scroll
-			loop(document.body);
 			scanRules();
 			window.save_css(true);
 		}, 1500);
@@ -216,6 +192,7 @@
 		window.addEventListener("unload", function() {
 			window.save_css(true);
 		});
+
 
 		function array_unique(arr) {
 			var seen = {};

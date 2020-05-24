@@ -20,7 +20,7 @@ set_time_limit(100); // Если будет много файлов можно �
 $data= __DIR__.'/data';
 if( !is_dir(__DIR__."/data") ) mkdir(__DIR__."/data", 0755, true);
 
-if($json['mode'] == 'auto' || $json['mode'] == 'save'){
+if($json['mode'] == 'save'){
 	//if($_SERVER['REMOTE_ADDR'] != '127.0.0.1') die(json_encode([])); // Для запуска на продакшн, можно вписать свой ip
 	
 	if( file_exists($data."/data_file") ) { 
@@ -29,28 +29,30 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 		$data_file= [];
 	}
 
-	if( !isset($data_file['complete']) ) $data_file['complete']= 'auto';
+	if( !isset($data_file['complete']) ) $data_file['complete']= 'manual';
 	
 	if( $data_file['complete'] == 'generate' ) {
 		die(json_encode(['status'=> 'generate', 'created'=> [], 'removed'=> 0 ]));
 	}
 	
+	
 	////////////////////////////////////////////////////////////////////////
 	// 	Массив классов в файле
 	if( !isset($data_file['rules_files']) ) $data_file['rules_files']= [];
-	
+		
 	foreach($json['rules_files'] as $file=>$rules){
 		if( !isset($data_file['rules_files'][$file]) ) $data_file['rules_files'][$file]= [];
 		
 		foreach($rules as $rule){
-			if( !in_array($rule, $data_file['rules_files'][$file]) ) $data_file['rules_files'][$file][]= $rule;
+			if( !in_array($rule, $data_file['rules_files'][$file]) ) {
+				$data_file['rules_files'][$file][]= $rule;
+			}
 		}
 	}
 	
 	
-	
 	////////////////////////////////////////////////////////////////////////
-	// 	Общая количество кcss лассов 
+	// 	Общая количество css классов 
 	if( !isset($data_file['rules_length']) ){ 
 		$data_file['rules_length']= [];
 	} 
@@ -83,17 +85,21 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 		$data_file['unused']= [$json['pathname']=>$json['unused']];
 	}
 	
+	$st= 'rrr';
 
 	if( isset($data_file['unused'][$json['pathname']]) ){ 
 		if( count($data_file['unused'][$json['pathname']]) > count($json['unused']) ){
 			$data_file['unused'][$json['pathname']]= $json['unused'];
+			$st= '>';
 		}
 		
-		if( $data_file['rules_length'][$json['pathname']] < $json['rules_length'] && count($data_file['unused'][$json['pathname']]) > count($json['unused']) ){
+		if( $data_file['rules_length'][$json['pathname']] <= $json['rules_length'] && count($data_file['unused'][$json['pathname']]) > count($json['unused']) ){
 			$data_file['unused'][$json['pathname']]= $json['unused'];
+			$st= '<=';
 		}
 	} else {
 		$data_file['unused'][$json['pathname']]= $json['unused'];
+		$st= '!';
 	}
 
 	
@@ -101,58 +107,6 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 		$data_file['rules_length'][$json['pathname']]= $json['rules_length'];
 	}
 
-
-	////////////////////////////////////////////////////////////////////////
-	// Массив ссылок для обхода страниц
-	if( isset($data_file['links']) ) {
-		$data_file['links']= array_merge( $data_file['links'], $json['links'] );
-	} else {
-		$data_file['links']= $json['links'];
-	}
-	
-	$data_file['links']= array_unique($data_file['links']);
-
-
-	////////////////////////////////////////////////////////////////////////
-	// Массив ссылок no html
-	if(!isset($data_file['no_html'])) { 
-		$data_file['no_html']= [];
-	} 
-	
-	
-	////////////////////////////////////////////////////////////////////////
-	// Массив уже обойденных страниц
-	if( !isset($data_file['visited']) ) { 
-		$data_file['visited']= [];
-	}
-	
-	if( !in_array($json['pathname'], $data_file['visited']) ) $data_file['visited'][]= $json['pathname'];
-
-
-
-	if( $data_file['complete'] == 'manual' ) {
-		die(json_encode([
-			'status'=> 'complete', 
-			'unused_length'=> count($data_file['unused'][$json['pathname']]), 
-			'rules_length'=> $data_file['rules_length'][$json['pathname']] 
-		]));
-	}
-
-
-
-
-	if($json['mode'] == 'auto'){
-		foreach($data_file['links'] as $link){ // Посылаем в браузер следующую ссылку, если это html
-			if( !in_array($link, $data_file['visited']) && !in_array($link, $data_file['no_html']) ){
-				if( strpos( get_headers($json['host'].$link, 1)['Content-Type'], 'text/html') !== false  ){
-					file_put_contents( $data."/data_file", serialize($data_file) );
-					die(json_encode(['status'=> 'ok', 'location' => $link]));
-				} else {
-					$data_file['no_html'][]= $link;
-				}
-			}
-		}
-	}
 	
 	$data_file['complete']= 'manual';
 	
@@ -160,12 +114,14 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 	die(json_encode([
 		'status'=> 'complete', 
 		'unused_length'=> count($data_file['unused'][$json['pathname']]), 
-		'rules_length'=> $data_file['rules_length'][$json['pathname']] 
+		'rules_length'=> $data_file['rules_length'][$json['pathname']],
+		'st'=>$st
 	]));
 	
 }
 
 // Добавить в коммерческой версии, возможность из панели управления замены исходных правил, с возможностью восстановления из резервной копии
+
 
 
 if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, без неиспользуемых стилей
@@ -218,7 +174,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		
 		$all_unused[$file]= $all_unused_file;
 	}
-
+	
 
 	$css_combine= "";
 	$created= [];
