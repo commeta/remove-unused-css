@@ -29,6 +29,16 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 		$data_file= [];
 	}
 
+	if( !isset($data_file['complete']) ) $data_file['complete']= 'auto';
+	
+	if( $data_file['complete'] == 'generate' ) {
+		die(json_encode(['status'=> 'generate', 'created'=> [], 'removed'=> [] ]));
+	}
+	
+	
+	
+	
+	
 	
 	////////////////////////////////////////////////////////////////////////
 	// 	
@@ -110,6 +120,17 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 	if( !in_array($json['pathname'], $data_file['visited']) ) $data_file['visited'][]= $json['pathname'];
 
 
+	if( $data_file['complete'] == 'manual' ) {
+		die(json_encode([
+			'status'=> 'complete', 
+			'unused_length'=> count($data_file['unused'][$json['pathname']]), 
+			'rules_length'=> $data_file['rules_length'][$json['pathname']] 
+		]));
+	}
+
+
+
+
 	if($json['mode'] == 'auto'){
 		foreach($data_file['links'] as $link){ // Посылаем в браузер следующую ссылку, если это html
 			if( !in_array($link, $data_file['visited']) && !in_array($link, $data_file['no_html']) ){
@@ -123,6 +144,7 @@ if($json['mode'] == 'auto' || $json['mode'] == 'save'){
 		}
 	}
 	
+	$data_file['complete']= 'manual';
 	
 	file_put_contents( $data."/data_file", serialize($data_file) );
 	die(json_encode([
@@ -219,12 +241,17 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 	$created[]= basename(__DIR__).'/css/remove-unused-css.min.css';
 	file_put_contents(__DIR__.'/css/remove-unused-css.min.css', $css_combine);
 	
+	
+	$data_file['complete']= 'generate';
+	file_put_contents( $data."/data_file", serialize($data_file) );
+	
+	
 	die(json_encode(['status'=> 'generate', 'created'=> $created, 'removed'=> $removed]));
 }
 
 
 
-function removeSelectors($oList) { // Удаление пустых и неиспользуемых селекторов
+function removeSelectors($oList) { // Удаление пустых селекторов
 	foreach ($oList->getContents() as $oBlock) {
 		if($oBlock instanceof Sabberworm\CSS\RuleSet\DeclarationBlock) {
 			if ( empty($oBlock->getRules()) ) {
@@ -247,7 +274,6 @@ function rel2abs( $rel, $base ) {
 	if ( strpos( $rel, "data" ) === 0 ) {
 		return $rel;
 	}
-	
 	
 	extract( parse_url( $base ) );
 
@@ -274,7 +300,6 @@ function rel2abs( $rel, $base ) {
 	$path = preg_replace( '#/[^/]*$#', '', $path );
 
 	// dirty absolute URL
-	//$abs = $host . $path . "/" . $rel;
 	$abs =  $path . "/" . $rel;
 
 	// replace '//' or  '/./' or '/foo/../' with '/'
@@ -282,7 +307,6 @@ function rel2abs( $rel, $base ) {
 	$abs = preg_replace( "/\/(?!\.\.)[^\/]+\/\.\.\//", "/", $abs );
 
 	// absolute URL is ready!
-	//return $scheme . '://' . $abs;
 	return $abs;
 }
 
