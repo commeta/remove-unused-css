@@ -205,7 +205,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 						// Проверить присутствие селектора в файле, чтобы сократить время обработки!
 						if( !in_array($selector, $data_file['rules_files'][$file]) ) continue;
 						
-						if(check_present($data_file['unused'], $selector, $pages, $data_file['rules_files'][$file])) {
+						if(check_present($data_file['unused'], $selector, $pages)) {
 							if( !in_array($selector, $all_unused_file) ) {
 								$all_unused_file[]= $selector;
 								$removed++;
@@ -218,8 +218,6 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		
 		$all_unused[$file]= $all_unused_file;
 	}
-
-	
 
 
 	$css_combine= "";
@@ -278,14 +276,10 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 }
 
 
-function check_present($unused, $selector, $pages, $file_css){
+function check_present($unused, $selector, $pages){
 	$delete= true;
 	foreach($unused as $k=>$v){
 		if( !in_array($k, $pages) ) continue;
-		
-		//if( !in_array($selector, $file_css ) ){
-			//return false;
-		//}
 		
 		if( !in_array($selector, $v ) ){
 			return false;
