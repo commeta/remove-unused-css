@@ -95,6 +95,11 @@ if($json['mode'] == 'save'){
 			$data_file['unused'][$json['pathname']]= $json['unused'];
 			$st= '<=';
 		}
+		
+		if( count($data_file['unused'][$json['pathname']]) == 0 && count($json['unused']) > 0 ){
+			$data_file['unused'][$json['pathname']]= $json['unused'];
+			$st= '0';
+		}
 	} else {
 		$data_file['unused'][$json['pathname']]= $json['unused'];
 		$st= '!';
@@ -140,6 +145,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 	$old_size= 0;
 	$removed= 0;
 	
+	
 	foreach($data_file['filesCSS'] as $file){ // Генерация очищенных файлов
 		$removed_in_file[$file]= 0;
 		
@@ -155,6 +161,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 			$intersect= array_intersect($intersect, $data_file['unused'][$page]);
 		}
 		
+		
 		$all_unused_file= []; // Собираем в массив классы для удаления
 		foreach($intersect as $selector){
 			if( !in_array($selector, $all_unused_file) ) {
@@ -162,6 +169,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 				$removed_in_file[$file]++;
 			}
 		}
+		
 		
 		$removed += $removed_in_file[$file];
 
