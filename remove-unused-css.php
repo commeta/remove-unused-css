@@ -213,11 +213,22 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		
 		file_put_contents( $path, $text_css );
 		
-		$css_combine.= preg_replace_callback( // Заменить пути на относительные от корня домена
+		$css_combine.= preg_replace_callback( // Заменить пути на относительные от корня домена, обработка includes!!!
 			'/url\((?!"?data)"?([^)]*)"?\)/',
 			function ($matches) {
 				global $file;
-				return sprintf('url("%s")',rel2abs(preg_replace(["/'/", '/^([^?]+)(\?.*?)?(#.*)?$/' ], ["", '$1$3'], $matches[1]), $file));
+				return 
+					sprintf(
+						'url("%s")',
+						rel2abs(
+							preg_replace(
+								["/'/", '/^([^?]+)(\?.*?)?(#.*)?$/' ], 
+								["", '$1$3'], 
+								$matches[1]
+							), 
+							$file
+						)
+					);
 			},
 			$text_css
 		);
