@@ -159,20 +159,15 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		
 		if(!is_array($pages) || count($pages) < 1) continue;
 		
-		$intersect= [];
+		$intersect= $data_file['rules_files'][$file];
 		foreach($pages as $page){ // Вычислить схождение
 			if(!isset($data_file['unused'][$page])) continue;
 			
-			if( count($intersect) < 1 ) $intersect= $data_file['unused'][$page];
-			else $intersect= array_intersect($intersect, $data_file['unused'][$page]);
+			$intersect= array_intersect($intersect, $data_file['unused'][$page]);
 		}
-		
 		
 		$all_unused_file= [];
 		foreach($intersect as $selector){
-			// Проверить присутствие селектора в файле!
-			if( !in_array($selector, $data_file['rules_files'][$file]) ) continue;
-						
 			if( !in_array($selector, $all_unused_file) ) {
 				$all_unused_file[]= $selector;
 				$removed++;
