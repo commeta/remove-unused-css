@@ -191,21 +191,17 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		foreach($all_unused_file as $class){
 			// Заменить пробелы и табы
 			$class = preg_replace(['/\t{1,}/', '/\s{2,}/'], ' ', $class);
-			
 			$s= preg_quote($class);
-			
-			$s= str_replace(" ", "\s?", $s);
-			$s= str_replace("\+", "\s?\+\s?", $s);
-			$s= str_replace("\>", "\s?\>\s?", $s);
-			$s= str_replace("~", "\s?~\s?", $s);
-			$s= str_replace('"', '\s?"\s?', $s);
-			$s= str_replace("\s?\s?", "\s?", $s);
+			$s= str_replace(
+				[" ","\+","\>","~",'"',"\s?\s?"], 
+				["\s?","\s?\+\s?","\s?\>\s?",'\s?"\s?',"\s?"], 
+				$s
+			);
 			
 			$search[]= sprintf('/}%s\s?\{[^\}]*?}/', $s);
 			
 			if( strpos($s, '"') !== false ) {
-				$s= str_replace('"', '', $s);
-				$s= str_replace("\s?\s?", "\s?", $s);
+				$s= str_replace(['"',"\s?\s?"], ['',"\s?"], $s);
 				$search[]= sprintf('/}%s\s?\{[^\}]*?}/', $s);
 			}
 		}
