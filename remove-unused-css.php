@@ -189,13 +189,13 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 			}
 			
 			
-			$m= preg_match('/(\+|\>|\~)/', $class);
+			$m= preg_match('/(\+|\>|~)/', $class);
 			if($m == 1){ // Проверки с доп. пробелами
 				$search[]= sprintf(
 					'/}%s\s?\{[^\}]*?}/', 
 					str_replace(
-						[" ",   "\+",       "\>",       '"',       "\s?\s?"], 
-						["\s?", "\s?\+\s?", "\s?\>\s?", '\s?"\s?', "\s?"], 
+						[" ",   "\+",       "\>",       '~',       "\s?\s?"], 
+						["\s?", "\s?\+\s?", "\s?\>\s?", '\s?~\s?', "\s?"], 
 						preg_quote($minify_class)
 					)
 				);
@@ -209,7 +209,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		
 		file_put_contents( $path, $text_css );
 		
-		$css_combine.= preg_replace_callback( // Заменить пути на относительные от корня домена, обработка includes!!!
+		$css_combine.= preg_replace_callback( // Заменить пути на относительные от корня домена, обработка includes!!! либо в начало файла, либо рекурсивеая вставка
 			'/url\((?!"?data)"?([^)]*)"?\)/',
 			function ($matches) {
 				global $file;
