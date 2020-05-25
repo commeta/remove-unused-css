@@ -217,7 +217,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		// Удаление правил на регулярках!
 		$search= [];
 		foreach($classes as $class){
-			$search[]= sprintf('/}(%s\s?\{[^\}]*?})/', preg_quote($class));
+			$search[]= sprintf('/}%s\s?\{[^\}]*?}/', preg_quote($class));
 		}
 		$text_css= preg_replace( $search, "}", $text_css );
 		$text_css= substr($text_css, 1); // Удалить маркер "}"
