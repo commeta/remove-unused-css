@@ -149,8 +149,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 	foreach($data_file['filesCSS'] as $file){ // Генерация очищенных файлов
 		$removed_in_file[$file]= 0;
 		
-		$isPresent= array_filter($data_file['filesCSS_page'], fn($v) => in_array($file, $v) );
-		$pages= array_keys($isPresent);
+		$pages= array_keys(array_filter($data_file['filesCSS_page'], fn($v) => in_array($file, $v)));
 		
 		if(!is_array($pages) || count($pages) < 1) continue;
 		
@@ -182,22 +181,28 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		// Удаление правил на регулярках!
 		$search= [];
 		foreach($all_unused_file as $class){
-			// Заменить пробелы и табы
-			$class = preg_replace(['/\t{1,}/', '/\s{2,}/'], ' ', $class);
+			$minify_class= minify_css($class);
+			$search[]= sprintf('/}%s\s?\{[^\}]*?}/', preg_quote($minify_class) );
 			
-			$s= str_replace(
-					[" ",   "\+",       "\>",       '"',       "\s?\s?"], 
-					["\s?", "\s?\+\s?", "\s?\>\s?", '\s?"\s?', "\s?"], 
-					preg_quote($class)
+			if( strpos($class, '"') !== false ) { // Добавим проверку без кавычек
+				$c= str_replace('"', '', $class);
+				$search[]= sprintf('/}%s\s?\{[^\}]*?}/', preg_quote(minify_css($c)) );
+			}
+			
+			
+			$m= preg_match('/(\+|\>|\~)/', $class);
+			if($m == 1){ // проверки с доп. пробелами
+				$search[]= sprintf(
+					'/}%s\s?\{[^\}]*?}/', 
+					str_replace(
+						[" ",   "\+",       "\>",       '"',       "\s?\s?"], 
+						["\s?", "\s?\+\s?", "\s?\>\s?", '\s?"\s?', "\s?"], 
+						preg_quote($minify_class)
+					)
 				);
-			
-			$search[]= sprintf('/}%s\s?\{[^\}]*?}/', $s);
-			
-			if( strpos($s, '"') !== false ) {
-				$s= str_replace(['"',"\s?\s?"], ['',"\s?"], $s);
-				$search[]= sprintf('/}%s\s?\{[^\}]*?}/', $s);
 			}
 		}
+		
 		
 		$text_css= preg_replace( $search, "}", $text_css );
 		$text_css= substr($text_css, 1); // Удалить маркер "}"
