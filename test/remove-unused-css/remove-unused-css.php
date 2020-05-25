@@ -182,6 +182,8 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 	$css_combine= "";
 	$created= [];
 		
+	$old_size= 0;
+	
 	foreach($filesCSS as $file){
 		$path= parse_url($file)['path'];
 		$created[]= basename(__DIR__).'/css'.$path;
@@ -190,25 +192,33 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		$path= __DIR__."/css".$path;
 		
 		
-		// Прогоним через парсер, удалим ошибки, и нормализуем формат.
+		// Минифицируем имена классов
+		$classes= implode('{}',$all_unused[$file])."{}";
+		$oParser= new Sabberworm\CSS\Parser($classes);
+		$oCss= $oParser->parse();
+		$classes= $oCss->render(Sabberworm\CSS\OutputFormat::createCompact());
+		$classes= explode('{}',$classes);
+		if( $classes[count($classes)-1] == '' ) array_pop($classes);
+		
+		
+		// Прогоним через парсер, удалим ошибки, и минифицируем формат.
 		$sSource= file_get_contents($file);
+		$old_size += ini_get('mbstring.func_overload') ? mb_strlen($sSource , '8bit') : strlen($sSource);
+		
 		$oParser= new Sabberworm\CSS\Parser($sSource);
 		$oCss= $oParser->parse();
 		removeSelectors($oCss);
 		
-		$text_css= "\n".$oCss->render(Sabberworm\CSS\OutputFormat::createPretty()); // createPretty - читаемый вид, createCompact - минифицированный
-		
+		$text_css= "}".$oCss->render(Sabberworm\CSS\OutputFormat::createCompact()); // createPretty - читаемый вид, createCompact - минифицированный
 		
 		// Удаление правил на регулярках!
-		foreach($all_unused[$file] as $class){
-			$text_css= preg_replace( sprintf('/\n\s?\t?(%s\s*\{[^\}]*?})/', preg_quote($class)), "\n", $text_css );
+		$search= [];
+		foreach($classes as $class){
+			$search[]= sprintf('/}(%s\s?\{[^\}]*?})/', preg_quote($class));
 		}
+		$text_css= preg_replace( $search, "", $text_css );
+		$text_css= substr($text_css, 1); // Удалить маркер "}"
 		
-		
-		// Минификация
-		$oParser= new Sabberworm\CSS\Parser($text_css);
-		$oCss= $oParser->parse();
-		$text_css= $oCss->render(Sabberworm\CSS\OutputFormat::createCompact()); // createPretty - читаемый вид, createCompact - минифицированный
 		
 		file_put_contents( $path, $text_css );
 		
