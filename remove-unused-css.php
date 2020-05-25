@@ -11,7 +11,7 @@
 header('Content-type: application/json');
 if(!isset($_POST['json'])) die(json_encode([]));
 $json= json_decode($_POST['json'], true);
-set_time_limit(100); // Если будет много файлов можно не успеть, дописать распараллеливание
+set_time_limit(50);
 
 $data= __DIR__.'/data';
 if( !is_dir(__DIR__."/data") ) mkdir(__DIR__."/data", 0755, true);
@@ -191,6 +191,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		foreach($all_unused_file as $class){
 			// Заменить пробелы и табы
 			$class = preg_replace(['/\t{1,}/', '/\s{2,}/'], ' ', $class);
+			
 			$s= preg_quote($class);
 			$s= str_replace(
 				[" ","\+","\>","~",'"',"\s?\s?"], 
@@ -213,10 +214,10 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		file_put_contents( $path, $text_css );
 		
 		$css_combine.= preg_replace_callback( // Заменить пути на относительные от корня домена
-			'/url\("([^)]*)"\)/',
+			'/url\((?!"?data)"?([^)]*)"?\)/',
 			function ($matches) {
 				global $file;
-				return sprintf('url("%s")',rel2abs($matches[1], $file));
+				return sprintf('url("%s")',rel2abs(str_replace("'","",$matches[1]), $file));
 			},
 			$text_css
 		);
