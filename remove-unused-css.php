@@ -54,7 +54,7 @@ if($json['mode'] == 'save'){
 	
 	
 	////////////////////////////////////////////////////////////////////////
-	// 	Общая количество css классов 
+	// 	Общее количество css классов 
 	if( !isset($data_file['rules_length']) ){ 
 		$data_file['rules_length']= [];
 	} 
@@ -221,7 +221,6 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		}
 		$text_css= preg_replace( $search, "}", $text_css );
 		$text_css= substr($text_css, 1); // Удалить маркер "}"
-		
 		
 		
 		file_put_contents( $path, $text_css );
