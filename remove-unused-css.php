@@ -126,20 +126,21 @@ if($json['mode'] == 'save'){
 if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, без неиспользуемых стилей
 	if( file_exists($data."/data_file") ) { 
 		$data_file= unserialize( file_get_contents($data."/data_file") );
-		
-		$filesCSS= $data_file['filesCSS'];
 	} else {
 		die(json_encode(['status'=>'error']));
 	}
 	
+	// Инициализация
+	$css_combine= "";
 	
-	$removed= 0;
 	$all_unused= [];
 	$removed_in_file= [];
+	$created= [];
 	
+	$old_size= 0;
+	$removed= 0;
 	
-	foreach($filesCSS as $file){ // Раскидаем по файлам правила для удаления
-		$all_unused[$file]= [];
+	foreach($data_file['filesCSS'] as $file){ // Генерация очищенных файлов
 		$removed_in_file[$file]= 0;
 		
 		$isPresent= array_filter($data_file['filesCSS_page'], fn($v) => in_array($file, $v) );
@@ -147,14 +148,15 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		
 		if(!is_array($pages) || count($pages) < 1) continue;
 		
+		// Вычислить схождение
 		$intersect= $data_file['rules_files'][$file];
-		foreach($pages as $page){ // Вычислить схождение
+		foreach($pages as $page){ 
 			if(!isset($data_file['unused'][$page])) continue;
 			
 			$intersect= array_intersect($intersect, $data_file['unused'][$page]);
 		}
 		
-		$all_unused_file= [];
+		$all_unused_file= []; // Собираем в массив классы для удаления
 		foreach($intersect as $selector){
 			if( !in_array($selector, $all_unused_file) ) {
 				$all_unused_file[]= $selector;
@@ -163,14 +165,8 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 			}
 		}
 
-		$all_unused[$file]= $all_unused_file;
-	}
-		
-	$css_combine= "";
-	$created= [];
-	$old_size= 0;
-	
-	foreach($filesCSS as $file){
+
+		// Воссоздадим структуру каталогов
 		$path= parse_url($file)['path'];
 		$created[]= basename(__DIR__).'/css'.$path;
 		
@@ -185,7 +181,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		
 		// Удаление правил на регулярках!
 		$search= [];
-		foreach($all_unused[$file] as $class){
+		foreach($all_unused_file as $class){
 			// Заменить пробелы и табы
 			$class = preg_replace('/\t{1,}/', ' ', $class);
 			$class = preg_replace('/\s{2,}/', ' ', $class);
@@ -207,6 +203,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 				$search[]= sprintf('/}%s\s?\{[^\}]*?}/', $s);
 			}
 		}
+		
 		$text_css= preg_replace( $search, "}", $text_css );
 		$text_css= substr($text_css, 1); // Удалить маркер "}"
 		
