@@ -177,7 +177,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 
 		$all_unused[$file]= $all_unused_file;
 	}
-	
+		
 	$css_combine= "";
 	$created= [];
 	$old_size= 0;
@@ -189,16 +189,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		if( !is_dir(__DIR__."/css/".dirname($path)) ) mkdir(__DIR__."/css/".dirname($path), 0755, true);
 		$path= __DIR__."/css".$path;
 		
-		
-		// Минифицируем имена классов
-		$classes= implode('{}',$all_unused[$file])."{}";
-		$oParser= new Sabberworm\CSS\Parser($classes);
-		$oCss= $oParser->parse();
-		$classes= $oCss->render(Sabberworm\CSS\OutputFormat::createCompact());
-		$classes= explode('{}',$classes);
-		if( $classes[count($classes)-1] == '' ) array_pop($classes);
-		
-		
+
 		// Прогоним через парсер, удалим ошибки, и минифицируем формат.
 		$sSource= file_get_contents($file);
 		$old_size += ini_get('mbstring.func_overload') ? mb_strlen($sSource , '8bit') : strlen($sSource);
@@ -211,8 +202,22 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		
 		// Удаление правил на регулярках!
 		$search= [];
-		foreach($classes as $class){
-			$search[]= sprintf('/}%s\s?\{[^\}]*?}/', preg_quote($class));
+		foreach($all_unused[$file] as $class){
+			$s= preg_quote($class);
+			$s= str_replace(" ", "\s?", $s);
+			$s= str_replace("\+", "\s?\+\s?", $s);
+			$s= str_replace("\>", "\s?\>\s?", $s);
+			$s= str_replace("~", "\s?~\s?", $s);
+			$s= str_replace('"', '\s?"\s?', $s);
+			$s= str_replace("\s?\s?", "\s?", $s);
+			
+			$search[]= sprintf('/}%s\s?\{[^\}]*?}/', $s);
+			
+			if( strpos($s, '"') !== false ) {
+				$s= str_replace('"', '', $s);
+				$s= str_replace("\s?\s?", "\s?", $s);
+				$search[]= sprintf('/}%s\s?\{[^\}]*?}/', $s);
+			}
 		}
 		$text_css= preg_replace( $search, "}", $text_css );
 		$text_css= substr($text_css, 1); // Удалить маркер "}"
