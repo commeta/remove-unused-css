@@ -146,6 +146,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 	
 	
 	$removed= 0;
+	$removed2= 0;
 	$all_unused= [];
 	
 	foreach($filesCSS as $file){ // Раскидаем по файлам правила для удаления
@@ -154,22 +155,31 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		$isPresent= array_filter($data_file['filesCSS_page'], fn($v) => in_array($file, $v) );
 		$pages= array_keys($isPresent);
 		
+		if(!is_array($pages) || count($pages) < 1) continue;
 		
 		$all_unused_file= [];
 		
-		if( is_array($pages) && count($pages) > 0 ){
-			foreach($pages as $page){
-				if( isset($data_file['unused'][$page]) ){
-					foreach($data_file['unused'][$page] as $selector){ 
-						// Проверить присутствие селектора в файле, чтобы сократить время обработки!
-						if( !in_array($selector, $data_file['rules_files'][$file]) ) continue;
-						
-						if(check_present($data_file['unused'], $selector, $pages)) {
-							if( !in_array($selector, $all_unused_file) ) {
-								$all_unused_file[]= $selector;
-								$removed++;
-							}
-						}
+		// Вычислить схождение
+		$intersect= [];
+		foreach($pages as $page){
+			if(!isset($data_file['unused'][$page])) continue;
+			
+			if( count($intersect) < 1 ) $intersect= $data_file['unused'][$page];
+			else $intersect= array_intersect($intersect, $data_file['unused'][$page]);
+		}
+		
+		
+		foreach($pages as $page){
+			if(!isset($data_file['unused'][$page])) continue;
+			
+			foreach($data_file['unused'][$page] as $selector){ 
+				// Проверить присутствие селектора в файле, чтобы сократить время обработки!
+				if( !in_array($selector, $data_file['rules_files'][$file]) ) continue;
+				
+				if( in_array($selector, $intersect) ) {
+					if( !in_array($selector, $all_unused_file) ) {
+						$all_unused_file[]= $selector;
+						$removed++;
 					}
 				}
 			}
@@ -232,19 +242,6 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 	
 	
 	die(json_encode(['status'=> 'generate', 'created'=> $created, 'removed'=> $removed]));
-}
-
-
-function check_present($unused, $selector, $pages){
-	$delete= true;
-	foreach($unused as $k=>$v){
-		if( !in_array($k, $pages) ) continue;
-		
-		if( !in_array($selector, $v ) ){
-			return false;
-		}
-	}
-	return $delete;
 }
 
 
