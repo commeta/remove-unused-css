@@ -6,10 +6,6 @@
  * Released under the GPL v3 or MIT license
  * 
  * System requirements: PHP 7.4
- * 
- * Use forked library: PHP CSS Parser
- * https://github.com/sabberworm/PHP-CSS-Parser
- * 
  */
  
 header('Content-type: application/json');
@@ -182,7 +178,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		$path= __DIR__."/css".$path;
 		
 
-		// минифицируем формат.
+		// Минифицируем CSS.
 		$sSource= file_get_contents($file);
 		$old_size += ini_get('mbstring.func_overload') ? mb_strlen($sSource , '8bit') : strlen($sSource);
 		$text_css= "}".minify_css($sSource);
@@ -191,8 +187,8 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		$search= [];
 		foreach($all_unused[$file] as $class){
 			// Заменить пробелы и табы
-			$class = preg_replace('/\s{2,}/', ' ', $class);
 			$class = preg_replace('/\t{1,}/', ' ', $class);
+			$class = preg_replace('/\s{2,}/', ' ', $class);
 			
 			$s= preg_quote($class);
 			
@@ -293,8 +289,9 @@ function rel2abs( $rel, $base ) {
 
 
 
-// https://stackoverflow.com/questions/15195750/minify-compress-css-with-regex
 function minify_css( $string = '' ) {
+// https://stackoverflow.com/questions/15195750/minify-compress-css-with-regex
+
     $comments = <<<'EOS'
 (?sx)
     # don't change anything inside of quotes
