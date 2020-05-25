@@ -223,7 +223,6 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		$text_css= substr($text_css, 1); // Удалить маркер "}"
 		
 		
-		print_r([$text_css]);
 		
 		file_put_contents( $path, $text_css );
 		
