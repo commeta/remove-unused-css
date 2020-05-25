@@ -146,7 +146,6 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 	
 	
 	$removed= 0;
-	$removed2= 0;
 	$all_unused= [];
 	
 	foreach($filesCSS as $file){ // Раскидаем по файлам правила для удаления
@@ -159,28 +158,28 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		
 		$all_unused_file= [];
 		
-		// Вычислить схождение
+		// Вычислить схождение и расхождение
+		$diff= [];
 		$intersect= [];
+		
 		foreach($pages as $page){
 			if(!isset($data_file['unused'][$page])) continue;
+			
+			if( count($diff) < 1 ) $diff= $data_file['unused'][$page];
+			else $diff= array_diff_assoc($diff, $data_file['unused'][$page]);
 			
 			if( count($intersect) < 1 ) $intersect= $data_file['unused'][$page];
 			else $intersect= array_intersect($intersect, $data_file['unused'][$page]);
 		}
 		
-		
-		foreach($pages as $page){
-			if(!isset($data_file['unused'][$page])) continue;
-			
-			foreach($data_file['unused'][$page] as $selector){ 
-				// Проверить присутствие селектора в файле, чтобы сократить время обработки!
-				if( !in_array($selector, $data_file['rules_files'][$file]) ) continue;
-				
-				if( in_array($selector, $intersect) ) {
-					if( !in_array($selector, $all_unused_file) ) {
-						$all_unused_file[]= $selector;
-						$removed++;
-					}
+		foreach($diff as $selector){
+			// Проверить присутствие селектора в файле!
+			if( !in_array($selector, $data_file['rules_files'][$file]) ) continue;
+						
+			if( in_array($selector, $intersect) ) {
+				if( !in_array($selector, $all_unused_file) ) {
+					$all_unused_file[]= $selector;
+					$removed++;
 				}
 			}
 		}
@@ -243,7 +242,6 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 	
 	die(json_encode(['status'=> 'generate', 'created'=> $created, 'removed'=> $removed]));
 }
-
 
 
 function removeSelectors($oList) { // Удаление пустых селекторов
