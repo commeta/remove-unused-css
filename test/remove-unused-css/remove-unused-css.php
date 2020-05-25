@@ -159,7 +159,6 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		
 		if(!is_array($pages) || count($pages) < 1) continue;
 		
-		
 		$intersect= [];
 		$diff= [];
 		foreach($pages as $page){ // Вычислить схождение
@@ -167,9 +166,6 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 			
 			if( count($intersect) < 1 ) $intersect= $data_file['unused'][$page];
 			else $intersect= array_intersect($intersect, $data_file['unused'][$page]);
-			
-			if( count($diff) < 1 ) $diff= $data_file['unused'][$page];
-			else $diff= array_diff_assoc($diff, $data_file['unused'][$page]);
 		}
 		
 		
@@ -184,12 +180,10 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 				$removed_in_file[$file]++;
 			}
 		}
-		
+
 		$all_unused[$file]= $all_unused_file;
 	}
 	
-	
-
 	$css_combine= "";
 	$created= [];
 	$old_size= 0;
