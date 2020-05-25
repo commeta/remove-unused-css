@@ -155,23 +155,16 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		if(!is_array($pages) || count($pages) < 1) continue;
 		
 		// Вычислить схождение
-		$intersect= $data_file['rules_files'][$file];
+		$all_unused_file= $data_file['rules_files'][$file];
 		foreach($pages as $page){ 
 			if(!isset($data_file['unused'][$page]) || count($data_file['unused'][$page]) == 0) continue;
-			$intersect= array_intersect($intersect, $data_file['unused'][$page]);
+			$all_unused_file= array_intersect($all_unused_file, $data_file['unused'][$page]);
 		}
 		
-		
-		$all_unused_file= []; // Собираем в массив классы для удаления
-		foreach($intersect as $selector){
-			if( !in_array($selector, $all_unused_file) ) {
-				$all_unused_file[]= $selector;
-				$removed_in_file[$file]++;
-			}
-		}
-		
-		
+		// Статистика
+		$removed_in_file[$file]= count($all_unused_file);
 		$removed += $removed_in_file[$file];
+
 
 		// Воссоздадим структуру каталогов
 		$path= parse_url($file)['path'];
