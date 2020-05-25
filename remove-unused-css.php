@@ -157,7 +157,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		// Вычислить схождение
 		$intersect= $data_file['rules_files'][$file];
 		foreach($pages as $page){ 
-			if(!isset($data_file['unused'][$page])) continue;
+			if(!isset($data_file['unused'][$page]) || count($data_file['unused'][$page]) == 0) continue;
 			$intersect= array_intersect($intersect, $data_file['unused'][$page]);
 		}
 		
