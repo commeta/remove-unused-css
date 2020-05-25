@@ -152,7 +152,6 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		$intersect= $data_file['rules_files'][$file];
 		foreach($pages as $page){ 
 			if(!isset($data_file['unused'][$page])) continue;
-			
 			$intersect= array_intersect($intersect, $data_file['unused'][$page]);
 		}
 		
@@ -160,11 +159,11 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		foreach($intersect as $selector){
 			if( !in_array($selector, $all_unused_file) ) {
 				$all_unused_file[]= $selector;
-				$removed++;
 				$removed_in_file[$file]++;
 			}
 		}
-
+		
+		$removed += $removed_in_file[$file];
 
 		// Воссоздадим структуру каталогов
 		$path= parse_url($file)['path'];
