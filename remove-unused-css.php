@@ -128,14 +128,6 @@ if($json['mode'] == 'save'){
 
 
 if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, без неиспользуемых стилей
-	spl_autoload_register(function($class){
-		$file = __DIR__.'/lib/'.strtr($class, '\\', '/').'.php';
-		if (file_exists($file)) {
-			require $file;
-			return true;
-		}
-	});
-	
 	if( file_exists($data."/data_file") ) { 
 		$data_file= unserialize( file_get_contents($data."/data_file") );
 		
@@ -190,20 +182,20 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		$path= __DIR__."/css".$path;
 		
 
-		// Прогоним через парсер, удалим ошибки, и минифицируем формат.
+		// минифицируем формат.
 		$sSource= file_get_contents($file);
 		$old_size += ini_get('mbstring.func_overload') ? mb_strlen($sSource , '8bit') : strlen($sSource);
-		
-		$oParser= new Sabberworm\CSS\Parser($sSource);
-		$oCss= $oParser->parse();
-		removeSelectors($oCss);
-		
-		$text_css= "}".$oCss->render(Sabberworm\CSS\OutputFormat::createCompact()); // createPretty - читаемый вид, createCompact - минифицированный
+		$text_css= "}".minify_css($sSource);
 		
 		// Удаление правил на регулярках!
 		$search= [];
 		foreach($all_unused[$file] as $class){
+			// Заменить пробелы и табы
+			$class = preg_replace('/\s{2,}/', ' ', $class);
+			$class = preg_replace('/\t{1,}/', ' ', $class);
+			
 			$s= preg_quote($class);
+			
 			$s= str_replace(" ", "\s?", $s);
 			$s= str_replace("\+", "\s?\+\s?", $s);
 			$s= str_replace("\>", "\s?\>\s?", $s);
@@ -256,22 +248,6 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 
 
 
-function removeSelectors($oList) { // Удаление пустых селекторов
-	foreach ($oList->getContents() as $oBlock) {
-		if($oBlock instanceof Sabberworm\CSS\RuleSet\DeclarationBlock) {
-			if ( empty($oBlock->getRules()) ) {
-				$oList->remove( $oBlock );
-			}
-		} else if($oBlock instanceof Sabberworm\CSS\CSSList\CSSBlockList) {
-			removeSelectors($oBlock);
-			if (empty($oBlock->getContents())) {
-				$oList->remove($oBlock);
-			}
-		}
-	}
-}
-
-
 function rel2abs( $rel, $base ) {
 	// parse base URL  and convert to local variables: $scheme, $host,  $path
 	// http://www.gambit.ph/converting-relative-urls-to-absolute-urls-in-php/
@@ -315,4 +291,52 @@ function rel2abs( $rel, $base ) {
 	return $abs;
 }
 
+
+
+// https://stackoverflow.com/questions/15195750/minify-compress-css-with-regex
+function minify_css( $string = '' ) {
+    $comments = <<<'EOS'
+(?sx)
+    # don't change anything inside of quotes
+    ( "(?:[^"\\]++|\\.)*+" | '(?:[^'\\]++|\\.)*+' )
+|
+    # comments
+    /\* (?> .*? \*/ )
+EOS;
+
+    $everything_else = <<<'EOS'
+(?six)
+    # don't change anything inside of quotes
+    ( "(?:[^"\\]++|\\.)*+" | '(?:[^'\\]++|\\.)*+' )
+|
+    # spaces before and after ; and }
+    \s*+ ; \s*+ ( } ) \s*+
+|
+    # all spaces around meta chars/operators (excluding + and -)
+    \s*+ ( [*$~^|]?+= | [{};,>~] | !important\b ) \s*+
+|
+    # all spaces around + and - (in selectors only!)
+    \s*([+-])\s*(?=[^}]*{)
+|
+    # spaces right of ( [ :
+    ( [[(:] ) \s++
+|
+    # spaces left of ) ]
+    \s++ ( [])] )
+|
+    # spaces left (and right) of : (but not in selectors)!
+    \s+(:)(?![^\}]*\{)
+|
+    # spaces at beginning/end of string
+    ^ \s++ | \s++ \z
+|
+    # double spaces to single
+    (\s)\s+
+EOS;
+
+    $search_patterns  = array( "%{$comments}%", "%{$everything_else}%" );
+    $replace_patterns = array( '$1', '$1$2$3$4$5$6$7$8' );
+
+    return preg_replace( $search_patterns, $replace_patterns, $string );
+}
 ?>
