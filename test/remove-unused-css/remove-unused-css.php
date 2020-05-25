@@ -190,28 +190,32 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		$path= __DIR__."/css".$path;
 		
 		
+		////// Минифицируем имена классов
+		$classes= implode('{}',$all_unused[$file])."{}";
+		$oParser= new Sabberworm\CSS\Parser($classes);
+		$oCss= $oParser->parse();
+		$classes= $oCss->render(Sabberworm\CSS\OutputFormat::createCompact());
+		$classes= explode('{}',$classes);
+		if( $classes[count($classes)-1] == '' ) array_pop($classes);
+		
+		
 		// Прогоним через парсер, удалим ошибки, и нормализуем формат.
 		$sSource= file_get_contents($file);
 		$oParser= new Sabberworm\CSS\Parser($sSource);
 		$oCss= $oParser->parse();
 		removeSelectors($oCss);
 		
-		$text_css= "\n".$oCss->render(Sabberworm\CSS\OutputFormat::createPretty()); // createPretty - читаемый вид, createCompact - минифицированный
+		$text_css= "}".$oCss->render(Sabberworm\CSS\OutputFormat::createCompact()); // createPretty - читаемый вид, createCompact - минифицированный
 		
 		
 		// Удаление правил на регулярках!
 		$search= [];
-		foreach($all_unused[$file] as $class){
-			$search[]= sprintf('/\n\s?\t?(%s\s*\{[^\}]*?})/', preg_quote($class));
+		foreach($classes as $class){
+			$search[]= sprintf('/}(%s\s?\{[^\}]*?})/', preg_quote($class));
 		}
-		$text_css= preg_replace( $search, "\n", $text_css );
+		$text_css= preg_replace( $search, "", $text_css );
+		$text_css= substr($text_css, 1); // Удалить маркер "}"
 		
-		
-		
-		// Минификация
-		$oParser= new Sabberworm\CSS\Parser($text_css);
-		$oCss= $oParser->parse();
-		$text_css= $oCss->render(Sabberworm\CSS\OutputFormat::createCompact()); // createPretty - читаемый вид, createCompact - минифицированный
 		
 		file_put_contents( $path, $text_css );
 		
