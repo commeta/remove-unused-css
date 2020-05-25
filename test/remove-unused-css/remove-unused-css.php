@@ -147,41 +147,51 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 	
 	$removed= 0;
 	$all_unused= [];
+	$removed_in_file= [];
+	
 	
 	foreach($filesCSS as $file){ // Раскидаем по файлам правила для удаления
 		$all_unused[$file]= [];
+		$removed_in_file[$file]= 0;
 		
 		$isPresent= array_filter($data_file['filesCSS_page'], fn($v) => in_array($file, $v) );
 		$pages= array_keys($isPresent);
 		
+		if(!is_array($pages) || count($pages) < 1) continue;
+		
+		
+		$intersect= [];
+		$diff= [];
+		foreach($pages as $page){ // Вычислить схождение
+			if(!isset($data_file['unused'][$page])) continue;
+			
+			if( count($intersect) < 1 ) $intersect= $data_file['unused'][$page];
+			else $intersect= array_intersect($intersect, $data_file['unused'][$page]);
+			
+			if( count($diff) < 1 ) $diff= $data_file['unused'][$page];
+			else $diff= array_diff_assoc($diff, $data_file['unused'][$page]);
+		}
+		
 		
 		$all_unused_file= [];
-		
-		if( is_array($pages) && count($pages) > 0 ){
-			foreach($pages as $page){
-				if( isset($data_file['unused'][$page]) ){
-					foreach($data_file['unused'][$page] as $selector){ 
-						// Проверить присутствие селектора в файле, чтобы сократить время обработки!
-						if( !in_array($selector, $data_file['rules_files'][$file]) ) continue;
+		foreach($intersect as $selector){
+			// Проверить присутствие селектора в файле!
+			if( !in_array($selector, $data_file['rules_files'][$file]) ) continue;
 						
-						if(check_present($data_file['unused'], $selector, $pages)) {
-							if( !in_array($selector, $all_unused_file) ) {
-								$all_unused_file[]= $selector;
-								$removed++;
-							}
-						}
-					}
-				}
+			if( !in_array($selector, $all_unused_file) ) {
+				$all_unused_file[]= $selector;
+				$removed++;
+				$removed_in_file[$file]++;
 			}
 		}
 		
 		$all_unused[$file]= $all_unused_file;
 	}
 	
+	
 
 	$css_combine= "";
 	$created= [];
-		
 	$old_size= 0;
 	
 	foreach($filesCSS as $file){
@@ -239,22 +249,16 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 	
 	$data_file['complete']= 'generate';
 	file_put_contents( $data."/data_file", serialize($data_file) );
+	$new_size= ini_get('mbstring.func_overload') ? mb_strlen($css_combine , '8bit') : strlen($css_combine);
 	
-	
-	die(json_encode(['status'=> 'generate', 'created'=> $created, 'removed'=> $removed]));
-}
-
-
-function check_present($unused, $selector, $pages){
-	$delete= true;
-	foreach($unused as $k=>$v){
-		if( !in_array($k, $pages) ) continue;
-		
-		if( !in_array($selector, $v ) ){
-			return false;
-		}
-	}
-	return $delete;
+	die(json_encode([
+		'status'=> 'generate', 
+		'created'=> $created, 
+		'removed'=> $removed,
+		'old_size'=> $old_size,
+		'new_size'=> $new_size,
+		'removed_in_file'=> $removed_in_file
+	]));
 }
 
 
