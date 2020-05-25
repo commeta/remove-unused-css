@@ -217,7 +217,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 			'/url\((?!"?data)"?([^)]*)"?\)/',
 			function ($matches) {
 				global $file;
-				return sprintf('url("%s")',rel2abs(str_replace("'","",$matches[1]), $file));
+				return sprintf('url("%s")',rel2abs(preg_replace(["/'/", '/^([^?]+)(\?.*?)?(#.*)?$/' ], ["", '$1$3'], $matches[1]), $file));
 			},
 			$text_css
 		);
