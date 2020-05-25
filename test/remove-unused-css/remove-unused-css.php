@@ -154,31 +154,31 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		$isPresent= array_filter($data_file['filesCSS_page'], fn($v) => in_array($file, $v) );
 		$pages= array_keys($isPresent);
 		
-		if(!is_array($pages) || count($pages) < 1) continue;
-		
-		
-		$intersect= [];
-		foreach($pages as $page){ // Вычислить схождение
-			if(!isset($data_file['unused'][$page])) continue;
-			
-			if( count($intersect) < 1 ) $intersect= $data_file['unused'][$page];
-			else $intersect= array_intersect($intersect, $data_file['unused'][$page]);
-		}
 		
 		$all_unused_file= [];
-		foreach($intersect as $selector){
-			// Проверить присутствие селектора в файле!
-			if( !in_array($selector, $data_file['rules_files'][$file]) ) continue;
+		
+		if( is_array($pages) && count($pages) > 0 ){
+			foreach($pages as $page){
+				if( isset($data_file['unused'][$page]) ){
+					foreach($data_file['unused'][$page] as $selector){ 
+						// Проверить присутствие селектора в файле, чтобы сократить время обработки!
+						if( !in_array($selector, $data_file['rules_files'][$file]) ) continue;
 						
-			if( !in_array($selector, $all_unused_file) ) {
-				$all_unused_file[]= $selector;
-				$removed++;
+						if(check_present($data_file['unused'], $selector, $pages)) {
+							if( !in_array($selector, $all_unused_file) ) {
+								$all_unused_file[]= $selector;
+								$removed++;
+							}
+						}
+					}
+				}
 			}
 		}
 		
 		$all_unused[$file]= $all_unused_file;
 	}
 	
+
 	$css_combine= "";
 	$created= [];
 		
@@ -190,32 +190,25 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		$path= __DIR__."/css".$path;
 		
 		
-		////// Минифицируем имена классов
-		$classes= implode('{}',$all_unused[$file])."{}";
-		$oParser= new Sabberworm\CSS\Parser($classes);
-		$oCss= $oParser->parse();
-		$classes= $oCss->render(Sabberworm\CSS\OutputFormat::createCompact());
-		$classes= explode('{}',$classes);
-		if( $classes[count($classes)-1] == '' ) array_pop($classes);
-		
-		
 		// Прогоним через парсер, удалим ошибки, и нормализуем формат.
 		$sSource= file_get_contents($file);
 		$oParser= new Sabberworm\CSS\Parser($sSource);
 		$oCss= $oParser->parse();
 		removeSelectors($oCss);
 		
-		$text_css= "}".$oCss->render(Sabberworm\CSS\OutputFormat::createCompact()); // createPretty - читаемый вид, createCompact - минифицированный
+		$text_css= "\n".$oCss->render(Sabberworm\CSS\OutputFormat::createPretty()); // createPretty - читаемый вид, createCompact - минифицированный
 		
 		
 		// Удаление правил на регулярках!
-		$search= [];
-		foreach($classes as $class){
-			$search[]= sprintf('/}(%s\s?\{[^\}]*?})/', preg_quote($class));
+		foreach($all_unused[$file] as $class){
+			$text_css= preg_replace( sprintf('/\n\s?\t?(%s\s*\{[^\}]*?})/', preg_quote($class)), "\n", $text_css );
 		}
-		$text_css= preg_replace( $search, "", $text_css );
-		$text_css= substr($text_css, 1); // Удалить маркер "}"
 		
+		
+		// Минификация
+		$oParser= new Sabberworm\CSS\Parser($text_css);
+		$oCss= $oParser->parse();
+		$text_css= $oCss->render(Sabberworm\CSS\OutputFormat::createCompact()); // createPretty - читаемый вид, createCompact - минифицированный
 		
 		file_put_contents( $path, $text_css );
 		
@@ -240,6 +233,20 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 	
 	die(json_encode(['status'=> 'generate', 'created'=> $created, 'removed'=> $removed]));
 }
+
+
+function check_present($unused, $selector, $pages){
+	$delete= true;
+	foreach($unused as $k=>$v){
+		if( !in_array($k, $pages) ) continue;
+		
+		if( !in_array($selector, $v ) ){
+			return false;
+		}
+	}
+	return $delete;
+}
+
 
 
 function removeSelectors($oList) { // Удаление пустых селекторов
