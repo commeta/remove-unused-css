@@ -156,38 +156,29 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		
 		if(!is_array($pages) || count($pages) < 1) continue;
 		
-		$all_unused_file= [];
 		
-		// Вычислить схождение и расхождение
-		$diff= [];
 		$intersect= [];
-		
-		foreach($pages as $page){
+		foreach($pages as $page){ // Вычислить схождение
 			if(!isset($data_file['unused'][$page])) continue;
-			
-			if( count($diff) < 1 ) $diff= $data_file['unused'][$page];
-			else $diff= array_diff_assoc($diff, $data_file['unused'][$page]);
 			
 			if( count($intersect) < 1 ) $intersect= $data_file['unused'][$page];
 			else $intersect= array_intersect($intersect, $data_file['unused'][$page]);
 		}
 		
-		foreach($diff as $selector){
+		$all_unused_file= [];
+		foreach($intersect as $selector){
 			// Проверить присутствие селектора в файле!
 			if( !in_array($selector, $data_file['rules_files'][$file]) ) continue;
 						
-			if( in_array($selector, $intersect) ) {
-				if( !in_array($selector, $all_unused_file) ) {
-					$all_unused_file[]= $selector;
-					$removed++;
-				}
+			if( !in_array($selector, $all_unused_file) ) {
+				$all_unused_file[]= $selector;
+				$removed++;
 			}
 		}
 		
 		$all_unused[$file]= $all_unused_file;
 	}
 	
-
 	$css_combine= "";
 	$created= [];
 		
@@ -209,9 +200,12 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		
 		
 		// Удаление правил на регулярках!
+		$search= [];
 		foreach($all_unused[$file] as $class){
-			$text_css= preg_replace( sprintf('/\n\s?\t?(%s\s*\{[^\}]*?})/', preg_quote($class)), "\n", $text_css );
+			$search[]= sprintf('/\n\s?\t?(%s\s*\{[^\}]*?})/', preg_quote($class));
 		}
+		$text_css= preg_replace( $search, "\n", $text_css );
+		
 		
 		
 		// Минификация
