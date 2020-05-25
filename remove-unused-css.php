@@ -150,7 +150,6 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		$removed_in_file[$file]= 0;
 		
 		$pages= array_keys(array_filter($data_file['filesCSS_page'], fn($v) => in_array($file, $v)));
-		
 		if(!is_array($pages) || count($pages) < 1) continue;
 		
 		// Вычислить схождение
@@ -191,7 +190,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 			
 			
 			$m= preg_match('/(\+|\>|\~)/', $class);
-			if($m == 1){ // проверки с доп. пробелами
+			if($m == 1){ // Проверки с доп. пробелами
 				$search[]= sprintf(
 					'/}%s\s?\{[^\}]*?}/', 
 					str_replace(
@@ -298,7 +297,7 @@ function rel2abs( $rel, $base ) {
 
 
 function minify_css( $string = '' ) {
-// https://stackoverflow.com/questions/15195750/minify-compress-css-with-regex
+	// https://stackoverflow.com/questions/15195750/minify-compress-css-with-regex
 
     $comments = <<<'EOS'
 (?sx)
