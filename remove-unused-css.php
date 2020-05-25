@@ -190,8 +190,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		$search= [];
 		foreach($all_unused_file as $class){
 			// Заменить пробелы и табы
-			$class = preg_replace('/\t{1,}/', ' ', $class);
-			$class = preg_replace('/\s{2,}/', ' ', $class);
+			$class = preg_replace(['/\t{1,}/', '/\s{2,}/'], ' ', $class);
 			
 			$s= preg_quote($class);
 			
