@@ -160,7 +160,6 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		if(!is_array($pages) || count($pages) < 1) continue;
 		
 		$intersect= [];
-		$diff= [];
 		foreach($pages as $page){ // Вычислить схождение
 			if(!isset($data_file['unused'][$page])) continue;
 			
@@ -220,9 +219,11 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		foreach($classes as $class){
 			$search[]= sprintf('/}(%s\s?\{[^\}]*?})/', preg_quote($class));
 		}
-		$text_css= preg_replace( $search, "", $text_css );
+		$text_css= preg_replace( $search, "}", $text_css );
 		$text_css= substr($text_css, 1); // Удалить маркер "}"
 		
+		
+		print_r([$text_css]);
 		
 		file_put_contents( $path, $text_css );
 		
