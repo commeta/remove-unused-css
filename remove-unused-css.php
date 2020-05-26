@@ -188,6 +188,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 			// Массив ненайденных классов
 			$not_found= [];
 			if(preg_match($search[count($search)-1], $text_css) == 0) $not_found[]= true;
+			else $not_found[]= false;
 			
 			
 			if( strpos($class, '"') !== false ) { // Добавим проверку без кавычек
@@ -196,6 +197,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 				
 				// Массив ненайденных классов
 				if(count($not_found) > 0 && preg_match($search[count($search)-1], $text_css) == 0) $not_found[]= true;
+				else $not_found[]= false;
 			}
 			
 			$m= preg_match('/(\+|\>|\*|\:|~)/', $class);
@@ -211,11 +213,12 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 				
 				// Массив ненайденных классов
 				if(count($not_found) > 0 && preg_match($search[count($search)-1], $text_css) == 0) $not_found[]= true;
+				else $not_found[]= false;
 			}
 			
 			
 			// Массив ненайденных классов
-			if(count($not_found) > 2) $not_find[]= $minify_class;
+			if(count($not_found) > 2 && $not_found[1] && $not_found[2] ) $not_find[]= $minify_class;
 		}
 		
 		$text_css= preg_replace( $search, "}", $text_css );
