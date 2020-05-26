@@ -194,7 +194,6 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 					$c= minify_css(str_replace('"', '', $class));
 					$s2= sprintf('/}%s\s?\{[^\}]*?}/', preg_quote($c) );
 					
-					// Массив ненайденных классов
 					if(preg_match($s2, $text_css) == 0) {
 						$not_found[]= true;
 					} else {
@@ -213,7 +212,6 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 						)
 					);
 					
-					// Массив ненайденных классов
 					if(preg_match($s3, $text_css) == 0) {
 						$not_found[]= true;
 					} else {
@@ -221,13 +219,12 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 						$not_found[]= false;
 					}
 				}
+				
+				// Массив ненайденных классов
+				if($not_found[1] && $not_found[2]) $not_find[]= $minify_class;
 			} else {
 				$search[]= $s;
 			}
-			
-			
-			// Массив ненайденных классов
-			if(count($not_found) > 2 && $not_found[1] && $not_found[2] ) $not_find[]= $minify_class;
 		}
 		
 		$text_css= preg_replace( $search, "}", $text_css );
@@ -246,7 +243,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 						rel2abs(
 							preg_replace(
 								["/'/", '/"/', '/^([^?]+)(\?.*?)?(#.*)?$/' ], 
-								["", "",'$1$3'], 
+								["",    "",    '$1$3'], 
 								$matches[1]
 							), 
 							$file
