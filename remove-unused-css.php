@@ -17,7 +17,7 @@ $data= __DIR__.'/data';
 if( !is_dir(__DIR__."/data") ) mkdir(__DIR__."/data", 0755, true);
 
 if($json['mode'] == 'save'){
-	//if($_SERVER['REMOTE_ADDR'] != '127.0.0.1') die(json_encode(['status'=> 'remove'])); // Для запуска на продакшн, можно вписать свой ip
+	//if($_SERVER['REMOTE_ADDR'] != '127.0.0.1') die(json_encode(['status'=> 'remove'])); // Для запуска на продакшн, можно вписать свой ip, доделать
 	
 	if( file_exists($data."/data_file") ) { 
 		$data_file= unserialize( file_get_contents($data."/data_file") );
@@ -98,7 +98,7 @@ if($json['mode'] == 'save'){
 		
 		if( count($data_file['unused'][$json['pathname']]) == 0 && count($json['unused']) > 0 ){
 			$data_file['unused'][$json['pathname']]= $json['unused'];
-			$st= '0';
+			$st= '0'; // Пару раз глюкануло, дало нулевой массив свободных классов, надо на фронте смотреть
 		}
 	} else {
 		$data_file['unused'][$json['pathname']]= $json['unused'];
@@ -150,10 +150,11 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 	foreach($data_file['filesCSS'] as $file){ // Генерация очищенных файлов
 		$removed_in_file[$file]= 0;
 		
+		// Массив всех страниц где подключен этот css файл
 		$pages= array_keys(array_filter($data_file['filesCSS_page'], fn($v) => in_array($file, $v)));
 		if(!is_array($pages) || count($pages) < 1) continue;
 		
-		// Вычислить схождение
+		// Вычислить схождение 
 		$all_unused_file= $data_file['rules_files'][$file];
 		foreach($pages as $page){ 
 			if(!isset($data_file['unused'][$page]) || count($data_file['unused'][$page]) == 0) continue;
@@ -183,16 +184,15 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		$search= [];
 		foreach($all_unused_file as $class){
 			$minify_class= minify_css($class);
-			$s= sprintf('/}%s\s?\{[^\}]*?}/', preg_quote($minify_class) );
+			$s= sprintf('/}%s\s?\{[^\}]*?}/', preg_quote($minify_class));
 			
 			// Массив ненайденных классов
-			$not_found= [];
 			if(preg_match($s, $text_css) == 0) {
-				$not_found[]= true;
+				$not_found= [];
 			
 				if( strpos($class, '"') !== false ) { // Добавим проверку без кавычек
 					$c= minify_css(str_replace('"', '', $class));
-					$s2= sprintf('/}%s\s?\{[^\}]*?}/', preg_quote($c) );
+					$s2= sprintf('/}%s\s?\{[^\}]*?}/', preg_quote($c));
 					
 					if(preg_match($s2, $text_css) == 0) {
 						$not_found[]= true;
@@ -221,7 +221,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 				}
 				
 				// Массив ненайденных классов
-				if($not_found[1] && $not_found[2]) $not_find[]= $minify_class;
+				if($not_found[0] && $not_found[1]) $not_find[]= $minify_class;
 			} else {
 				$search[]= $s;
 			}
@@ -233,7 +233,8 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		
 		file_put_contents( $path, $text_css );
 		
-		$css_combine.= preg_replace_callback( // Заменить пути на относительные от корня домена, обработка includes!!! либо в начало файла, либо рекурсивеая вставка
+		// Заменить пути на относительные от корня домена
+		$css_combine.= preg_replace_callback( // доделать обработку includes!!! (либо в начало файла, либо рекурсивная вставка)
 			'/url\((?!"?data)"?([^)]*)"?\)/',
 			function ($matches) {
 				global $file;
