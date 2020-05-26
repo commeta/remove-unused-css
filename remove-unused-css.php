@@ -190,29 +190,31 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 			if(preg_match($search[count($search)-1], $text_css) == 0) $not_found[]= true;
 			
 			
-			if( strpos($class, '"') !== false ) { // Добавим проверку без кавычек
-				$c= minify_css(str_replace('"', '', $class));
-				$search[]= sprintf('/}%s\s?\{[^\}]*?}/', preg_quote($c) );
+			if(count($not_found) > 0){
+				if( strpos($class, '"') !== false ) { // Добавим проверку без кавычек
+					$c= minify_css(str_replace('"', '', $class));
+					$search[]= sprintf('/}%s\s?\{[^\}]*?}/', preg_quote($c) );
+					
+					// Массив ненайденных классов
+					if(count($not_found) > 0 && preg_match($search[count($search)-1], $text_css) == 0) $not_found[]= true;
+					else $not_found[]= false;
+				}
 				
-				// Массив ненайденных классов
-				if(count($not_found) > 0 && preg_match($search[count($search)-1], $text_css) == 0) $not_found[]= true;
-				else $not_found[]= false;
-			}
-			
-			$m= preg_match('/(\+|\>|\*|\:|~)/', $class);
-			if($m == 1){ // Проверки с доп. пробелами
-				$search[]= sprintf(
-					'/}%s\s?\{[^\}]*?}/', 
-					str_replace(
-						[" ",   "\+",       "\>",       '~',       '\*',       '\:',        "\s?\s?"], 
-						["\s?", "\s?\+\s?", "\s?\>\s?", '\s?~\s?', '\s?\*\s?', '\s?\:\s?',  "\s?"], 
-						preg_quote($minify_class)
-					)
-				);
-				
-				// Массив ненайденных классов
-				if(count($not_found) > 0 && preg_match($search[count($search)-1], $text_css) == 0) $not_found[]= true;
-				else $not_found[]= false;
+				$m= preg_match('/(\+|\>|\*|\:|~)/', $class);
+				if($m == 1){ // Проверки с доп. пробелами
+					$search[]= sprintf(
+						'/}%s\s?\{[^\}]*?}/', 
+						str_replace(
+							[" ",   "\+",       "\>",       '~',       '\*',       '\:',        "\s?\s?"], 
+							["\s?", "\s?\+\s?", "\s?\>\s?", '\s?~\s?', '\s?\*\s?', '\s?\:\s?',  "\s?"], 
+							preg_quote($minify_class)
+						)
+					);
+					
+					// Массив ненайденных классов
+					if(count($not_found) > 0 && preg_match($search[count($search)-1], $text_css) == 0) $not_found[]= true;
+					else $not_found[]= false;
+				}
 			}
 			
 			
