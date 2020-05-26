@@ -141,6 +141,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 	$all_unused= [];
 	$removed_in_file= [];
 	$created= [];
+	$not_find= [];
 	
 	$old_size= 0;
 	$removed= 0;
@@ -177,31 +178,45 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		$old_size += ini_get('mbstring.func_overload') ? mb_strlen($sSource , '8bit') : strlen($sSource);
 		$text_css= "}".minify_css($sSource);
 		
+		
 		// Удаление правил на регулярках!
 		$search= [];
 		foreach($all_unused_file as $class){
 			$minify_class= minify_css($class);
 			$search[]= sprintf('/}%s\s?\{[^\}]*?}/', preg_quote($minify_class) );
 			
+			// Массив ненайденных классов
+			$not_found= [];
+			if(preg_match($search[count($search)-1], $text_css) == 0) $not_found[]= true;
+			
+			
 			if( strpos($class, '"') !== false ) { // Добавим проверку без кавычек
-				$c= str_replace('"', '', $class);
-				$search[]= sprintf('/}%s\s?\{[^\}]*?}/', preg_quote(minify_css($c)) );
+				$c= minify_css(str_replace('"', '', $class));
+				$search[]= sprintf('/}%s\s?\{[^\}]*?}/', preg_quote($c) );
+				
+				// Массив ненайденных классов
+				if(count($not_found) > 0 && preg_match($search[count($search)-1], $text_css) == 0) $not_found[]= true;
 			}
 			
-			
-			$m= preg_match('/(\+|\>|~)/', $class);
+			$m= preg_match('/(\+|\>|\*|\:|~)/', $class);
 			if($m == 1){ // Проверки с доп. пробелами
 				$search[]= sprintf(
 					'/}%s\s?\{[^\}]*?}/', 
 					str_replace(
-						[" ",   "\+",       "\>",       '~',       "\s?\s?"], 
-						["\s?", "\s?\+\s?", "\s?\>\s?", '\s?~\s?', "\s?"], 
+						[" ",   "\+",       "\>",       '~',       '\*',       '\:',        "\s?\s?"], 
+						["\s?", "\s?\+\s?", "\s?\>\s?", '\s?~\s?', '\s?\*\s?', '\s?\:\s?',  "\s?"], 
 						preg_quote($minify_class)
 					)
 				);
+				
+				// Массив ненайденных классов
+				if(count($not_found) > 0 && preg_match($search[count($search)-1], $text_css) == 0) $not_found[]= true;
 			}
+			
+			
+			// Массив ненайденных классов
+			if(count($not_found) > 2) $not_find[]= $minify_class;
 		}
-		
 		
 		$text_css= preg_replace( $search, "}", $text_css );
 		$text_css= substr($text_css, 1); // Удалить маркер "}"
@@ -239,13 +254,17 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 	file_put_contents( $data."/data_file", serialize($data_file) );
 	$new_size= ini_get('mbstring.func_overload') ? mb_strlen($css_combine , '8bit') : strlen($css_combine);
 	
+	
+	$removed -= count($not_find);
+	
 	die(json_encode([
 		'status'=> 'generate', 
 		'created'=> $created, 
 		'removed'=> $removed,
 		'old_size'=> $old_size,
 		'new_size'=> $new_size,
-		'removed_in_file'=> $removed_in_file
+		'removed_in_file'=> $removed_in_file,
+		'not_find'=> $not_find
 	]));
 }
 
