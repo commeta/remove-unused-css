@@ -197,7 +197,6 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 				
 				// Массив ненайденных классов
 				if(count($not_found) > 0 && preg_match($search[count($search)-1], $text_css) == 0) $not_found[]= true;
-				else $not_found[]= false;
 			}
 			
 			$m= preg_match('/(\+|\>|\*|\:|~)/', $class);
