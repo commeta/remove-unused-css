@@ -183,26 +183,29 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		$search= [];
 		foreach($all_unused_file as $class){
 			$minify_class= minify_css($class);
-			$search[]= sprintf('/}%s\s?\{[^\}]*?}/', preg_quote($minify_class) );
+			$s= sprintf('/}%s\s?\{[^\}]*?}/', preg_quote($minify_class) );
 			
 			// Массив ненайденных классов
 			$not_found= [];
-			if(preg_match($search[count($search)-1], $text_css) == 0) $not_found[]= true;
+			if(preg_match($s, $text_css) == 0) $not_found[]= true;
 			
 			
 			if(count($not_found) > 0){
 				if( strpos($class, '"') !== false ) { // Добавим проверку без кавычек
 					$c= minify_css(str_replace('"', '', $class));
-					$search[]= sprintf('/}%s\s?\{[^\}]*?}/', preg_quote($c) );
+					$s2= sprintf('/}%s\s?\{[^\}]*?}/', preg_quote($c) );
 					
 					// Массив ненайденных классов
-					if(count($not_found) > 0 && preg_match($search[count($search)-1], $text_css) == 0) $not_found[]= true;
-					else $not_found[]= false;
+					if(preg_match($s2, $text_css) == 0) {
+						$not_found[]= true;
+					} else {
+						$search[]= $s2;
+						$not_found[]= false;
+					}
 				}
 				
-				$m= preg_match('/(\+|\>|\*|\:|~)/', $class);
-				if($m == 1){ // Проверки с доп. пробелами
-					$search[]= sprintf(
+				if(preg_match('/(\+|\>|\*|\:|~)/', $class) == 1){ // Проверки с доп. пробелами
+					$s3= sprintf(
 						'/}%s\s?\{[^\}]*?}/', 
 						str_replace(
 							[" ",   "\+",       "\>",       '~',       '\*',       '\:',        "\s?\s?"], 
@@ -212,9 +215,15 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 					);
 					
 					// Массив ненайденных классов
-					if(count($not_found) > 0 && preg_match($search[count($search)-1], $text_css) == 0) $not_found[]= true;
-					else $not_found[]= false;
+					if(preg_match($s3, $text_css) == 0) {
+						$not_found[]= true;
+					} else {
+						$search[]= $s3;
+						$not_found[]= false;
+					}
 				}
+			} else {
+				$search[]= $s;
 			}
 			
 			
