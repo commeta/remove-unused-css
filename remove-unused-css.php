@@ -96,9 +96,10 @@ if($json['mode'] == 'save'){
 			$st= '<=';
 		}
 		
+		// Пару раз глюкануло, дало нулевой массив свободных классов, надо на фронте смотреть, пофиксил проверкой на 0, из расчета что такого не бывает
 		if( count($data_file['unused'][$json['pathname']]) == 0 && count($json['unused']) > 0 ){
 			$data_file['unused'][$json['pathname']]= $json['unused'];
-			$st= '0'; // Пару раз глюкануло, дало нулевой массив свободных классов, надо на фронте смотреть, пофиксил проверкой на 0, из расчета что такого не бывает
+			$st= '0'; 
 		}
 	} else {
 		$data_file['unused'][$json['pathname']]= $json['unused'];
@@ -256,7 +257,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		);
 		
 		
-		// Обработка @import - перенос в начало файла
+		// Обработка @import - перенос в начало файла, надо по идее их сюда вставлять с удалением правил - потестить!
 		if( preg_match_all("/@\s?import\s?[^;]*?;/iu", $text_css, $matches_import) != 0){
 			if( isset($matches_import[0]) ){
 				foreach($matches_import[0] as $import){
