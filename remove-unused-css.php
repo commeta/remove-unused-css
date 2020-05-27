@@ -98,7 +98,7 @@ if($json['mode'] == 'save'){
 		
 		if( count($data_file['unused'][$json['pathname']]) == 0 && count($json['unused']) > 0 ){
 			$data_file['unused'][$json['pathname']]= $json['unused'];
-			$st= '0'; // Пару раз глюкануло, дало нулевой массив свободных классов, надо на фронте смотреть
+			$st= '0'; // Пару раз глюкануло, дало нулевой массив свободных классов, надо на фронте смотреть, пофиксил проверкой на 0, из расчета что такого не бывает
 		}
 	} else {
 		$data_file['unused'][$json['pathname']]= $json['unused'];
@@ -140,6 +140,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 	
 	$all_unused= [];
 	$removed_in_file= [];
+	$first_lines= [];
 	$created= [];
 	$not_find= [];
 	
@@ -234,8 +235,8 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		file_put_contents( $path, $text_css );
 		
 		// Заменить пути на относительные от корня домена
-		$css_combine.= preg_replace_callback( // доделать обработку includes!!! (либо в начало файла, либо рекурсивная вставка)
-			'/url\((?!"?data)"?([^)]*)"?\)/',
+		$text_css= preg_replace_callback( 
+			'/url\((?!"?data)"?([^)]*)"?\)/iu',
 			function ($matches) {
 				global $file;
 				return 
@@ -253,11 +254,75 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 			},
 			$text_css
 		);
+		
+		
+		
+		
+		// Обработка @import - перенос в начало файла
+		if( preg_match_all("/@\s?import\s?[^;]*?;/iu", $text_css, $matches_import) != 0){
+			if( isset($matches_import[0]) ){
+				foreach($matches_import[0] as $import){
+					$text_css= str_replace($import, '', $text_css);
+					$import= str_replace("'", '"', $import);
+					
+					if( preg_match('/url/iu', $import) == 0 ){
+						$import= preg_replace_callback( 
+							'/"(.*)"/',
+							function ($matches) {
+								global $file;
+								return 
+									sprintf(
+										'"%s"',
+										rel2abs(
+											preg_replace(
+												["/'/", '/"/', '/^([^?]+)(\?.*?)?(#.*)?$/' ], 
+												["",    "",    '$1$3'], 
+												$matches[1]
+											), 
+											$file
+										)
+									);
+							},
+							$import
+						);
+						
+					}
+					$first_lines[]= $import;
+				}
+			}
+		}
+		
+		// Обработка @charset, если не utf-8 - то пока остановим создание общего файла
+		if( preg_match("/@\s?charset\s?[^;]*?;/", $text_css, $matches_charset) != 0){
+			if( isset($matches_charset[0]) ){
+				$file_charset= $matches_charset[0];
+				if( preg_match('/utf-8/iu', $file_charset) == 1 ){
+					$text_css= str_replace($file_charset, '', $text_css);
+					$charset= 'utf-8';
+				}
+			}
+		}
+		
+		
+		$css_combine.= $text_css;
+		if( isset($charset) && $charset != 'utf-8') $css_combine= '';
 	}
 
+
+	if( count($first_lines) > 0 && $css_combine != ''){
+		$str= '';
+		foreach($first_lines as $line){
+			$str.= $line;
+		}
+		$css_combine= $str.$css_combine;
+	}
+
+
 	// Генерирует общий файл объединяющий все вместе, можно подключать его вместо всех остальных
-	$created[]= basename(__DIR__).'/css/remove-unused-css.min.css';
-	file_put_contents(__DIR__.'/css/remove-unused-css.min.css', $css_combine);
+	if($css_combine != ''){
+		$created[]= basename(__DIR__).'/css/remove-unused-css.min.css';
+		file_put_contents(__DIR__.'/css/remove-unused-css.min.css', $css_combine);
+	}
 	
 	
 	$data_file['complete']= 'generate';

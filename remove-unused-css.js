@@ -170,7 +170,7 @@
 		}, 1000);
 		
 		
-		setTimeout(function() { // wait 1s, and restart scroll
+		setTimeout(function() { // wait 1s, and save rules page
 			scanRules();
 			window.save_css(true);
 		}, 1500);
