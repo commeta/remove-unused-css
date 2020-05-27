@@ -256,8 +256,6 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		);
 		
 		
-		
-		
 		// Обработка @import - перенос в начало файла
 		if( preg_match_all("/@\s?import\s?[^;]*?;/iu", $text_css, $matches_import) != 0){
 			if( isset($matches_import[0]) ){
@@ -275,8 +273,8 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 										'"%s"',
 										rel2abs(
 											preg_replace(
-												["/'/", '/"/', '/^([^?]+)(\?.*?)?(#.*)?$/' ], 
-												["",    "",    '$1$3'], 
+												["/'/",'/"/'], 
+												'',
 												$matches[1]
 											), 
 											$file
@@ -291,6 +289,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 				}
 			}
 		}
+		
 		
 		// Обработка @charset, если не utf-8 - то пока остановим создание общего файла
 		if( preg_match("/@\s?charset\s?[^;]*?;/", $text_css, $matches_charset) != 0){
@@ -309,6 +308,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 	}
 
 
+	// Обработка @import - перенос в начало файла
 	if( count($first_lines) > 0 && $css_combine != ''){
 		$str= '';
 		foreach($first_lines as $line){
