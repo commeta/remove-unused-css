@@ -77,7 +77,7 @@ if($json['mode'] == 'save'){
 	$data_file['filesCSS_page'][$json['pathname']]= $json['filesCSS'];
 	
 
-	////////////////////////////////////////////////////////////////////////
+	//////////////////////////////////////////////////////////////////////// Переписать!
 	// Массив неиспользуемых правил, по страницам
 	if( !isset($data_file['unused']) ){ 
 		$data_file['unused']= [$json['pathname']=>$json['unused']];
@@ -96,7 +96,7 @@ if($json['mode'] == 'save'){
 			$st= '<=';
 		}
 		
-		// Пару раз глюкануло, дало нулевой массив свободных классов, надо на фронте смотреть, пофиксил проверкой на 0, из расчета что такого не бывает
+		// Пару раз глюкануло, дало нулевой массив свободных классов, надо на фронте смотреть, пофиксил проверкой на 0, из расчета что такого не бывает, bag
 		if( count($data_file['unused'][$json['pathname']]) == 0 && count($json['unused']) > 0 ){
 			$data_file['unused'][$json['pathname']]= $json['unused'];
 			$st= '0'; 
@@ -158,7 +158,8 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		
 		// Вычислить схождение 
 		$all_unused_file= $data_file['rules_files'][$file];
-		foreach($pages as $page){ 
+		foreach($pages as $page){
+			// Усилить проверку, а вдруг там и вправду 0 незанятых - bag
 			if(!isset($data_file['unused'][$page]) || count($data_file['unused'][$page]) == 0) continue;
 			$all_unused_file= array_intersect($all_unused_file, $data_file['unused'][$page]);
 		}
@@ -257,7 +258,8 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		);
 		
 		
-		// Обработка @import - перенос в начало файла, надо по идее их сюда вставлять с удалением правил - потестить!
+		// Обработка @import - перенос в начало файла
+		// надо по идее их сюда вставлять с удалением правил - потестить!
 		if( preg_match_all("/@\s?import\s?[^;]*?;/iu", $text_css, $matches_import) != 0){
 			if( isset($matches_import[0]) ){
 				foreach($matches_import[0] as $import){
