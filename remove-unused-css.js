@@ -20,6 +20,12 @@
 			<span id="unused-css-rules">0</span> CSS правил.
 			<span id="manual-mode"></span>
 		`;
+		
+		var buttons_operations_unused= `
+			<button id="saveCSSrules" onclick="window.save_css()">Сохранить правила</button>
+			<button onclick="window.save_css('generate')">Сгенерировать файлы</button>
+		`;
+		
 		document.body.append(div);
 		window.rules_files= {};
 
@@ -28,7 +34,6 @@
 		console.log('Parsed CSS rules:', parsedRules);
 		
 		detectDuplicateSelectors(parsedRules);
-		
 		var selectorsToTrack = getSelectorsToTrack(parsedRules);
 		
 		window.selectorStats = {
@@ -68,7 +73,10 @@
 				message.push(unused.length + ' unused');
 				
 				let unusedcssrules= document.getElementById("unused-css-rules");
-				if(unusedcssrules) unusedcssrules.innerHTML= unused.length;
+				if(unusedcssrules) {
+					if(unused.length == 0) unusedcssrules.innerHTML= `<i style="color:black;">${unused.length}</i>`;
+					else unusedcssrules.innerHTML= unused.length;
+				}
 			}
 			
 			window.selectorStats.unused = unused;
@@ -102,6 +110,11 @@
 		
 
 		window.save_css= function(mode= false) {
+			if( window.rules_length < 1 || parsedRules.filesCSS.length < 1 || window.selectorStats.unused.length < 1){
+				document.getElementById("manual-mode").innerHTML= buttons_operations_unused;
+				return;
+			}
+			
 			let upload = {
 				"filesCSS": parsedRules.filesCSS,
 				"rules_files": window.rules_files,
@@ -132,14 +145,8 @@
 				return response.json();
 			}).then(function(data) {
 				if(typeof( data.status ) != "undefined"){
-					let buttons= `
-						<button id="saveCSSrules" onclick="window.save_css()">Сохранить правила</button>
-						<button onclick="window.save_css('generate')">Сгенерировать файлы</button>
-					`;
-					
 					if(data.status == "complete"){
-						document.getElementById("manual-mode").innerHTML= buttons;
-						
+						document.getElementById("manual-mode").innerHTML= buttons_operations_unused;
 						document.getElementById("saveCSSrules").disabled= true;
 						
 						window.unused_length= data.unused_length;
@@ -152,7 +159,7 @@
 							files += '<br />' + file;
 						});
 						
-						let removed= buttons;
+						let removed= buttons_operations_unused;
 						if(typeof( data.removed ) != "undefined" && data.removed > 0) removed= `Удалено: ${data.removed} классов, `;
 						
 						document.getElementById("manual-mode").innerHTML= `
@@ -170,10 +177,12 @@
 		}, 1000);
 		
 		
-		setTimeout(function() { // wait 1s, and save rules page
+		// wait 1s, and save rules page
+		setTimeout(function() { 
 			scanRules();
 			window.save_css(true);
 		}, 1500);
+
 
 		window.addEventListener("unload", function() {
 			window.save_css(true);
