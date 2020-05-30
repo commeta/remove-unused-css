@@ -78,8 +78,6 @@ if($json['mode'] == 'save'){
 	}
 	
 	
-	
-/*
 	//////////////////////////////////////////////////////////////////////// Переписать!
 	// Массив неиспользуемых правил, по страницам
 	if( !isset($data_file['unused']) ){ 
@@ -99,7 +97,6 @@ if($json['mode'] == 'save'){
 			$st= '<=';
 		}
 		
-		// Пару раз глюкануло, дало нулевой массив свободных классов, надо на фронте смотреть, пофиксил проверкой на 0, из расчета что такого не бывает, bag
 		if( count($data_file['unused'][$json['pathname']]) == 0 && count($json['unused']) > 0 ){
 			$data_file['unused'][$json['pathname']]= $json['unused'];
 			$st= '0'; 
@@ -108,10 +105,10 @@ if($json['mode'] == 'save'){
 		$data_file['unused'][$json['pathname']]= $json['unused'];
 		$st= '!';
 	}
-*/
-
-
-
+	
+	
+	
+/*
 	// Массив неиспользуемых правил, по страницам
 	$st= 'read';
 	if( !isset($data_file['unused'][$json['pathname']]) ){ 
@@ -144,6 +141,9 @@ if($json['mode'] == 'save'){
 			}
 		}
 	}
+	
+*/
+	
 	
 
 	
