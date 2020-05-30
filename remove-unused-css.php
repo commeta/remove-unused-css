@@ -84,21 +84,20 @@ if($json['mode'] == 'save'){
 		$data_file['unused']= [$json['pathname']=>$json['unused']];
 	}
 	
-	$st= 'read';
-	// Добавить при появлении нового правила, перепроверку присутствия удаленных для страницы
+	$stat= 'read';
 	if( isset($data_file['unused'][$json['pathname']]) ){ 
 		if( count($data_file['unused'][$json['pathname']]) > count($json['unused']) ){
 			$data_file['unused'][$json['pathname']]= $json['unused'];
-			$st= '>';
+			$stat= '>';
 		}
 		
 		if( $data_file['rules_length'][$json['pathname']] < $json['rules_length'] && count($data_file['unused'][$json['pathname']]) != count($json['unused'])){
 			$data_file['unused'][$json['pathname']]= $json['unused'];
-			$st= '<';
+			$stat= '<';
 		}
 	} else {
 		$data_file['unused'][$json['pathname']]= $json['unused'];
-		$st= '!';
+		$stat= '!';
 	}
 	
 
@@ -115,7 +114,7 @@ if($json['mode'] == 'save'){
 		'status'=> 'complete', 
 		'unused_length'=> count($data_file['unused'][$json['pathname']]), 
 		'rules_length'=> $data_file['rules_length'][$json['pathname']],
-		'st'=>$st
+		'stat'=>$stat
 	]));
 	
 }
@@ -155,8 +154,6 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		// Вычислить схождение 
 		$all_unused_file= $data_file['rules_files'][$file];
 		foreach($pages as $page){
-			// Усилить проверку, а вдруг там и вправду 0 незанятых - bag
-			//if(!isset($data_file['unused'][$page]) || count($data_file['unused'][$page]) == 0) continue;
 			if(!isset($data_file['unused'][$page])) continue;
 			$all_unused_file= array_intersect($all_unused_file, $data_file['unused'][$page]);
 		}
