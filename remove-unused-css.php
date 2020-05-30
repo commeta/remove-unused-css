@@ -78,13 +78,13 @@ if($json['mode'] == 'save'){
 	}
 	
 	
-	//////////////////////////////////////////////////////////////////////// Переписать!
+	////////////////////////////////////////////////////////////////////////
 	// Массив неиспользуемых правил, по страницам
 	if( !isset($data_file['unused']) ){ 
 		$data_file['unused']= [$json['pathname']=>$json['unused']];
 	}
 	
-	$st= 'rrr';
+	$st= 'read';
 	// Добавить при появлении нового правила, перепроверку присутствия удаленных для страницы
 	if( isset($data_file['unused'][$json['pathname']]) ){ 
 		if( count($data_file['unused'][$json['pathname']]) > count($json['unused']) ){
@@ -92,58 +92,14 @@ if($json['mode'] == 'save'){
 			$st= '>';
 		}
 		
-		if( $data_file['rules_length'][$json['pathname']] <= $json['rules_length'] && count($data_file['unused'][$json['pathname']]) > count($json['unused']) ){
+		if( $data_file['rules_length'][$json['pathname']] < $json['rules_length'] && count($data_file['unused'][$json['pathname']]) != count($json['unused'])){
 			$data_file['unused'][$json['pathname']]= $json['unused'];
-			$st= '<=';
-		}
-		
-		if( count($data_file['unused'][$json['pathname']]) == 0 && count($json['unused']) > 0 ){
-			$data_file['unused'][$json['pathname']]= $json['unused'];
-			$st= '0'; 
+			$st= '<';
 		}
 	} else {
 		$data_file['unused'][$json['pathname']]= $json['unused'];
 		$st= '!';
 	}
-	
-	
-	
-/*
-	// Массив неиспользуемых правил, по страницам
-	$st= 'read';
-	if( !isset($data_file['unused'][$json['pathname']]) ){ 
-		$data_file['unused']= [$json['pathname']=>$json['unused']];
-		$st= '!';
-	} else {
-		if( count($json['unused']) == 0 && 
-			$json['rules_length'] > 0 && 
-			$data_file['rules_length'][$json['pathname']] == $json['rules_length']
-		){
-			$st= '0';
-			$data_file['unused'][$json['pathname']]= $json['unused'];
-		} else {
-			$diff= array_diff($data_file['unused'][$json['pathname']], $json['unused']); 
-			
-			if( count($diff) > 0 &&
-				count($data_file['unused'][$json['pathname']]) > count($json['unused']) &&
-				$data_file['rules_length'][$json['pathname']] <= $json['rules_length']
-			) {
-				$st= '>';
-				$data_file['unused'][$json['pathname']]= $json['unused'];
-			}
-			
-			
-			if( count($diff) > 0 &&
-				$data_file['rules_length'][$json['pathname']] < $json['rules_length']
-			){
-				$data_file['unused'][$json['pathname']]= $json['unused'];
-				$st= '<';
-			}
-		}
-	}
-	
-*/
-	
 	
 
 	
