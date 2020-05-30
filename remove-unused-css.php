@@ -80,18 +80,19 @@ if($json['mode'] == 'save'){
 	
 	////////////////////////////////////////////////////////////////////////
 	// Массив неиспользуемых правил, по страницам
+	$stat= 'read';
 	if( !isset($data_file['unused']) ){ 
 		$data_file['unused']= [$json['pathname']=>$json['unused']];
+		$stat= '!';
 	}
 	
-	$stat= 'read';
 	if( isset($data_file['unused'][$json['pathname']]) ){ 
 		if( count($data_file['unused'][$json['pathname']]) > count($json['unused']) ){
 			$data_file['unused'][$json['pathname']]= $json['unused'];
 			$stat= '>';
 		}
 		
-		if( $data_file['rules_length'][$json['pathname']] < $json['rules_length'] && count($data_file['unused'][$json['pathname']]) != count($json['unused'])){
+		if( $data_file['rules_length'][$json['pathname']] < $json['rules_length'] ){
 			$data_file['unused'][$json['pathname']]= $json['unused'];
 			$stat= '<';
 		}
