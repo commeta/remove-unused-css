@@ -229,8 +229,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 		// Заменить пути на относительные от корня домена
 		$text_css= preg_replace_callback( 
 			'/url\((?!"?data)"?([^)]*)"?\)/iu',
-			function ($matches) {
-				global $file;
+			function ($matches) use($file){
 				return 
 					sprintf(
 						'url("%s")',
@@ -259,8 +258,7 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 					if( preg_match('/url/iu', $import) == 0 ){
 						$import= preg_replace_callback( 
 							'/"(.*)"/',
-							function ($matches) {
-								global $file;
+							function ($matches) use($file) {
 								return 
 									sprintf(
 										'"%s"',
@@ -290,16 +288,19 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 				$file_charset= $matches_charset[0];
 				if( preg_match('/utf-8/iu', $file_charset) == 1 ){
 					$text_css= str_replace($file_charset, '', $text_css);
-					$charset= 'utf-8';
+					$charset[]= 'utf-8';
 				}
 			}
 		}
 		
-		
 		$css_combine.= $text_css;
-		if( isset($charset) && $charset != 'utf-8') $css_combine= '';
 	}
-
+	
+	if( isset($charset) ) {
+		foreach($charset as $ct){
+			if($ct != 'utf-8') $css_combine= '';
+		}
+	}
 
 	// Обработка @import - перенос в начало файла
 	if( count($first_lines) > 0 && $css_combine != ''){
