@@ -289,6 +289,8 @@ if($json['mode'] == 'generate'){ // Создаем новые CSS файлы, б
 				if( preg_match('/utf-8/iu', $file_charset) == 1 ){
 					$text_css= str_replace($file_charset, '', $text_css);
 					$charset[]= 'utf-8';
+				} else {
+					$charset[]= $file_charset;
 				}
 			}
 		}
