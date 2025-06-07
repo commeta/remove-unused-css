@@ -1,6 +1,6 @@
 # Remove Unused CSS
 
-![Remove Unused CSS](https://raw.githubusercontent.com/commeta/remove-unused-css/refs/heads/main/image.png "Remove Unused CSS")
+![Remove Unused CSS](https://raw.githubusercontent.com/commeta/remove-unused-css/refs/heads/master/image.png "Remove Unused CSS")
 
 
 Автоматический анализатор и оптимизатор CSS для удаления неиспользуемых селекторов с вашего веб-сайта. Инструмент помогает значительно уменьшить размер CSS файлов и улучшить производительность сайта.
