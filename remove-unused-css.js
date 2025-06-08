@@ -6,22 +6,82 @@
  */
 (function () {
     'use strict';
-    const CONFIG = { 
-		CHECK_INTERVAL: 1000, 
-		SERVER_ENDPOINT: '/remove-unused-css/remove-unused-css.php', 
-		BUTTON_ID: 'unused-css-button', 
-		MENU_ID: 'unused-css-menu' 
-	};
-    
-    let state = { 
-		unusedSelectors: new Map(), 
-		styleSheetsInfo: new Map(), 
-		isProcessing: false, 
-		totalUnusedCount: 0, 
-		currentPageSelectors: new Set() 
-	};
-    
+    const CONFIG = {
+        CHECK_INTERVAL: 1000,
+        SERVER_ENDPOINT: '/remove-unused-css/remove-unused-css.php',
+        BUTTON_ID: 'unused-css-button',
+        MENU_ID: 'unused-css-menu'
+    };
+
+    let state = {
+        unusedSelectors: new Map(),
+        styleSheetsInfo: new Map(),
+        isProcessing: false,
+        totalUnusedCount: 0,
+        currentPageSelectors: new Set()
+    };
+
     class CSSUtils {
+        static isSafeSelectorToCheck(selector) {
+            if (!selector) return false;
+            const trimmed = selector.trim();
+
+            // Шаблоны, после совпадения с которыми селектор никогда не удаляется:
+            const NEVER_REMOVE_PATTERNS = [
+                /:[a-z-]+/i,          // любой псевдо-класс, например :hover, :active
+                /::[a-z-]+/i,         // любой псевдо-элемент, например ::before, ::after
+                /@/,                  // директивы @media, @supports и т.п.
+                /--/,                 // CSS-переменные (custom properties), например --main-color
+                /-webkit-|-moz-|-ms-|-o-/, // префиксы браузеров
+                /keyframes|animation/i,     // анимации и ключевые кадры
+                /\[.*\]/,             // атрибутные селекторы, например [type="text"]
+                />/,                  // селекторы потомков (child), например div > p
+                /\+/,                 // селекторы соседей (adjacent sibling), например h1 + p
+                /~/,                  // селекторы общих соседей (general sibling), например h1 ~ p
+                /\(/,                 // любые скобки (включая вызовы функций)
+                /calc\(/i,            // функции calc()
+                /var\(/i,             // функции var()
+                /url\(/i,             // функции url(), включающие внешние ресурсы
+                /rgb\(/i,             // функции rgb()
+                /hsl\(/i,             // функции hsl()
+                /linear-gradient/i,   // градиенты linear-gradient()
+                /radial-gradient/i,   // градиенты radial-gradient()
+                /transform/i,         // свойства transform
+                /transition/i,        // свойства transition
+                /filter/i,            // свойства filter
+                /backdrop-filter/i,   // свойства backdrop-filter
+                /mask/i,              // свойства mask
+                /clip-path/i,         // свойства clip-path
+                /nth-child/i,         // псевдо-классы :nth-child()
+                /nth-of-type/i,       // псевдо-классы :nth-of-type()
+                /not\(/i,             // псевдо-класс :not()
+                /is\(/i,              // псевдо-класс :is()
+                /where\(/i,           // псевдо-класс :where()
+                /has\(/i              // псевдо-класс :has()
+            ];
+            if (NEVER_REMOVE_PATTERNS.some(pattern => pattern.test(trimmed))) return false;
+
+            // Важно не удалять базовые теги и корневые селекторы:
+            const CRITICAL_SELECTORS = [
+                'html', 'body', '*', ':root',
+                'head', 'title', 'meta', 'link',
+                'script', 'style', 'base'
+            ];
+            if (CRITICAL_SELECTORS.includes(trimmed.toLowerCase())) return false;
+
+            // Разрешённые (простые) селекторы, которые безопасно проверять:
+            const SAFE_PATTERNS = [
+                /^[a-zA-Z][a-zA-Z0-9-_]*$/,           // тег или класс без точки/решётки, например div, container
+                /^\.[a-zA-Z][a-zA-Z0-9-_]*$/,         // класс, например .button
+                /^#[a-zA-Z][a-zA-Z0-9-_]*$/,          // ID, например #header
+                /^[a-zA-Z][a-zA-Z0-9-_]*\.[a-zA-Z][a-zA-Z0-9-_]*$/,  // тег.класс, например button.primary
+                /^[a-zA-Z][a-zA-Z0-9-_]*#[a-zA-Z][a-zA-Z0-9-_]*$/   // тег#id, например div#main
+            ];
+
+            // Селектор безопасен, если соответствует хотя бы одному из простых паттернов
+            return SAFE_PATTERNS.some(pattern => pattern.test(trimmed));
+        }
+
         static async loadStyleSheetContent(href) {
             try {
                 const response = await fetch(href);
@@ -76,70 +136,6 @@
             });
             if (document.querySelectorAll('style').length > 0) cssFiles.add('inline');
             return cssFiles;
-        }
-        static isSafeSelectorToCheck(selector) {
-            if (!selector) return false;
-            const trimmed = selector.trim();
-            const NEVER_REMOVE_PATTERNS = [
-                /:[a-z-]+/i,
-                /::[a-z-]+/i,
-                /@/,
-                /--/,
-                /-webkit-|-moz-|-ms-|-o-/,
-                /keyframes|animation/i,
-                /\[.*\]/,
-                />/,
-                /\+/,
-                /~/,
-                /\(/,
-                /calc\(/i,
-                /var\(/i,
-                /url\(/i,
-                /rgb\(/i,
-                /hsl\(/i,
-                /linear-gradient/i,
-                /radial-gradient/i,
-                /transform/i,
-                /transition/i,
-                /filter/i,
-                /backdrop-filter/i,
-                /mask/i,
-                /clip-path/i,
-                /nth-child/i,
-                /nth-of-type/i,
-                /not\(/i,
-                /is\(/i,
-                /where\(/i,
-                /has\(/i
-            ];
-            
-            if (NEVER_REMOVE_PATTERNS.some(pattern => pattern.test(trimmed))) return false;
-            
-            const CRITICAL_SELECTORS = [
-				'html', 
-				'body', 
-				'*', 
-				':root', 
-				'head', 
-				'title', 
-				'meta', 
-				'link', 
-				'script', 
-				'style', 
-				'base'
-			];
-            
-            if (CRITICAL_SELECTORS.includes(trimmed.toLowerCase())) return false;
-            
-            const SAFE_PATTERNS = [
-                /^[a-zA-Z][a-zA-Z0-9-_]*$/,
-                /^\.[a-zA-Z][a-zA-Z0-9-_]*$/,
-                /^#[a-zA-Z][a-zA-Z0-9-_]*$/,
-                /^[a-zA-Z][a-zA-Z0-9-_]*\.[a-zA-Z][a-zA-Z0-9-_]*$/,
-                /^[a-zA-Z][a-zA-Z0-9-_]*#[a-zA-Z][a-zA-Z0-9-_]*$/
-            ];
-            
-            return SAFE_PATTERNS.some(pattern => pattern.test(trimmed));
         }
     }
     class SelectorManager {
