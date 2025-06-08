@@ -269,17 +269,17 @@ const CONFIG = {
 ```
 ваш-проект/
 ├── remove-unused-css/
-│   ├── remove-unused-css.php      # Серверный обработчик
-│   ├── remove-unused-css.js       # Клиентский скрипт
+│   ├── remove-unused-css.php          # Серверный обработчик
+│   ├── remove-unused-css.js           # Клиентский скрипт
 │   ├── data/
-│   │   └── unused_selectors.json  # База данных селекторов
-│   ├── css/                       # Очищенные CSS-файлы
+│   │   └── unused_selectors.json      # База данных селекторов
+│   ├── css/                           # Очищенные CSS-файлы
 │   │   ├── styles/
-│   │   │   └── main.css          # Очищенная версия
+│   │   │   └── main.css               # Очищенная версия
 │   │   ├── bootstrap/
-│   │   │   └── bootstrap.min.css  # Очищенная версия
+│   │   │   └── bootstrap.min.css      # Очищенная версия
 │   │   └── remove-unused-css.min.css  # Объединенный файл
-│   └── error.log                  # Лог ошибок
+│   ├── backup                         # Резервные копии
 ```
 
 ### Файл данных unused_selectors.json
