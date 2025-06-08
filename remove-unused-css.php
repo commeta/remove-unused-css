@@ -1,10 +1,5 @@
 <?php
-/*!
- * Remove unused CSS 
- * https://github.com/commeta/remove-unused-css
- * Copyright 2025 Commeta
- * Released under the GPL v3 or MIT license
- */
+
 
 declare(strict_types=1);
 
@@ -34,56 +29,72 @@ class RemoveUnusedCSSProcessor
     private array $errors = [];
     private array $processedFiles = [];
     private array $statistics = [];
-    private array $safePatterns = [
-        '/^[a-zA-Z][a-zA-Z0-9-_]*$/',
-        '/^\.[a-zA-Z][a-zA-Z0-9-_]*$/',
-        '/^#[a-zA-Z][a-zA-Z0-9-_]*$/',
-        '/^[a-zA-Z][a-zA-Z0-9-_]*\.[a-zA-Z][a-zA-Z0-9-_]*$/',
-        '/^[a-zA-Z][a-zA-Z0-9-_]*#[a-zA-Z][a-zA-Z0-9-_]*$/'
+    
+    private array $safePatterns = [ // Простые безопасные селекторы (только эти можно проверять через querySelector)
+        '/^[a-zA-Z][a-zA-Z0-9-_]*$/', // Тег или класс-плейсхолдер без спецсимволов, например div, container
+        '/^\.[a-zA-Z][a-zA-Z0-9-_]*$/', // Класс, начинающийся с точки, например .button, .header-nav
+        '/^#[a-zA-Z][a-zA-Z0-9-_]*$/', // ID, начинающийся с решетки, например #main, #sidebar
+        '/^[a-zA-Z][a-zA-Z0-9-_]*\.[a-zA-Z][a-zA-Z0-9-_]*$/', // Тег и класс вместе, например button.primary, div.container
+        '/^[a-zA-Z][a-zA-Z0-9-_]*#[a-zA-Z][a-zA-Z0-9-_]*$/' // Тег и ID вместе, например section#intro, article#post
     ];
-    private array $criticalPatterns = [
-        '/^@/',
-        '/:[a-z-]+/i',
-        '/::[a-z-]+/i',
-        '/\[[\w\-="\':\s]*\]/',
-        '/--[\w\-]+/',
-        '/-webkit-/',
-        '/-moz-/',
-        '/-ms-/',
-        '/-o-/',
-        '/\+/',
-        '/~/',
-        '/>/',
-        '/\(/)',
-        '/keyframes/i',
-        '/animation/i',
-        '/transform/i',
-        '/transition/i',
-        '/from\b/',
+
+    private array $criticalPatterns = [ // Паттерны, которые гарантированно делают селектор "критическим" и не удаляются
+        '/^@/', // Директивы, начинающиеся с @, например @media, @supports
+        '/:[a-z-]+/i', // Псевдо-классы типа :hover, :active и т.п.
+        '/::[a-z-]+/i', // Псевдо-элементы типа ::before, ::after
+        '/\[[\w\-="\':\s]*\]/', // Атрибутные селекторы [attr="value"], [data-id]
+        '/--[\w\-]+/', // CSS-переменные, начинающиеся с --, например --main-color
+        '/-webkit-/', // Вендорные префиксы -webkit-
+        '/-moz-/', // Вендорные префиксы -moz-
+        '/-ms-/', // Вендорные префиксы -ms-
+        '/-o-/', // Вендорные префиксы -o-
+        '/\+/', // Соседние селекторы +, например h1 + p
+        '/~/', // Общие соседи ~, например h2 ~ p
+        '/>/', // Дочерние селекторы >, например ul > li
+        '/\(/)', // Любые скобки (функции CSS)
+        '/keyframes/i', // Анимации keyframes
+        '/animation/i', // Свойство animation
+        '/transform/i', // Свойство transform
+        '/transition/i', // Свойство transition
+        '/from\b/', // Ключевые слова from/to в @keyframes
         '/to\b/',
-        '/\d+%/',
-        '/\\\\/',
-        '/calc\(/i',
-        '/var\(/i',
-        '/url\(/i',
-        '/rgb\(/i',
-        '/rgba\(/i',
-        '/hsl\(/i',
-        '/hsla\(/i',
-        '/linear-gradient/i',
+        '/\d+%/', // Процентные значения, например 50%
+        '/\\\\/', // Экранирование символов, обратный слэш
+        '/calc\(/i', // Функция calc()
+        '/var\(/i', // Функция var()
+        '/url\(/i', // Функция url()
+        '/rgb\(/i', // Цвет в формате rgb()
+        '/rgba\(/i', // Цвет в формате rgba()
+        '/hsl\(/i', // Цвет в формате hsl()
+        '/hsla\(/i', // Цвет в формате hsla()
+        '/linear-gradient/i', // Градиенты
         '/radial-gradient/i',
-        '/filter/i',
+        '/filter/i', // Фильтры CSS
         '/backdrop-filter/i',
-        '/mask/i',
-        '/clip-path/i',
-        '/nth-child/i',
+        '/mask/i', // Маски
+        '/clip-path/i', // Обрезка путей
+        '/nth-child/i', // Псевдо-классы :nth-child() и :nth-of-type()
         '/nth-of-type/i',
-        '/not\(/i',
+        '/not\(/i', // Псевдо-классы когортных функций
         '/is\(/i',
         '/where\(/i',
         '/has\(/i'
     ];
-    private array $criticalSelectors = ['html', 'body', '*', ':root', 'head', 'title', 'meta', 'link', 'script', 'style', 'base'];
+
+    // Критические селекторы, которые никогда не удаляются целиком
+    private array $criticalSelectors = [
+        'html',    // корневой элемент
+        'body',    // тело документа
+        '*',       // универсальный селектор
+        ':root',   // псевдокласс корня
+        'head',    // секция <head>
+        'title',   // тег <title>
+        'meta',    // метатеги
+        'link',    // ссылки на внешние ресурсы
+        'script',  // скрипты
+        'style',   // встроенные стили
+        'base'     // базовый URL документа
+    ];
 
     public function __construct()
     {
@@ -431,12 +442,13 @@ class RemoveUnusedCSSProcessor
 
     private function minifyCss(string $css): string
     {
-        $css = preg_replace('!/\*[^*]*\*+([^/][^*]*\*+)*/!', '', $css);
-        $css = preg_replace('/\s+/', ' ', $css);
-        $css = preg_replace('/\s*([{}:;,>+~])\s*/', '$1', $css);
-        $css = preg_replace('/;+}/', '}', $css);
-        return trim($css);
+        $css = preg_replace('!/\*[^*]*\*+([^/][^*]*\*+)*/!', '', $css); // Удаляем все CSS-комментарии: /* … */
+        $css = preg_replace('/\s+/', ' ', $css); // Сжимаем все последовательные пробельные символы в один пробел
+        $css = preg_replace('/\s*([{}:;,>+~])\s*/', '$1', $css); // Убираем пробелы вокруг ключевых символов синтаксиса
+        $css = preg_replace('/;+}/', '}', $css); // Удаляем лишние точки с запятой перед закрывающей фигурной скобкой
+        return trim($css); // Обрезаем пробелы
     }
+
 
     private function sendSuccess(string $message): void
     {
