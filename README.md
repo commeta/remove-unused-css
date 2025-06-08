@@ -383,6 +383,7 @@ MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 SELECTORS_FILE = 'data/unused_selectors.json'
 CLEAN_CSS_DIR = 'css/'
 COMBINED_CSS_FILE = 'remove-unused-css.min.css'
+BACKUP_DIR = 'backup/'
 ```
 
 ### Отладка и мониторинг
