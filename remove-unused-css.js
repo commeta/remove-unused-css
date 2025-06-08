@@ -84,14 +84,34 @@
 
         static async loadStyleSheetContent(href) {
             try {
-                const response = await fetch(href);
-                if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                const response = await fetch(href, {
+                    method: 'GET',
+                    mode: 'cors',                 // включаем CORS-запрос
+                    cache: 'no-cache',            // не кэшировать
+                    credentials: 'omit'           // при необходимости: 'include' или 'same-origin'
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
                 return await response.text();
+
             } catch (error) {
-                console.warn(`Не удалось загрузить стили: ${href}`, error);
+                const isCorsError =
+                    error instanceof TypeError &&
+                    /Failed to fetch/i.test(error.message);
+
+                if (isCorsError) {
+                    console.warn(`CORS—ошибка при загрузке стилей с внешнего домена: ${href}`, error);
+                } else {
+                    console.warn(`Не удалось загрузить стили: ${href}`, error);
+                }
+
                 return '';
             }
         }
+
         static parseCSSText(cssText) {
             try {
                 const styleElement = document.createElement('style');
@@ -243,16 +263,25 @@
                     break;
             }
         }
-        static processMediaRule(mediaRule, href) {
-            const media = mediaRule.media.mediaText;
+        static async processMediaRule(mediaRule, href) {
+            const mediaText = mediaRule.media.mediaText;
+            const isActive = mediaText
+                ? window.matchMedia(mediaText).matches
+                : true;
+
+            if (!isActive) {
+                return;
+            }
+
             for (const rule of mediaRule.cssRules) {
                 if (rule.type === CSSRule.STYLE_RULE) {
-                    SelectorManager.addSelector(rule.selectorText, href, media);
+                    SelectorManager.addSelector(rule.selectorText, href, mediaText);
                 } else if (rule.type === CSSRule.MEDIA_RULE) {
-                    this.processMediaRule(rule, href);
+                    await this.processMediaRule(rule, href);
                 }
             }
         }
+
     }
     class UIManager {
         static createFloatingButton() {
