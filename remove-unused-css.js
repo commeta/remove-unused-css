@@ -8,7 +8,6 @@
 (function() {
     'use strict';
 
-    // Конфигурация
     const CONFIG = {
         CHECK_INTERVAL: 1000,
         SERVER_ENDPOINT: '/remove-unused-css/remove-unused-css.php',
@@ -16,7 +15,6 @@
         MENU_ID: 'unused-css-menu'
     };
 
-    // Состояние приложения
     let state = {
         unusedSelectors: new Map(),
         styleSheetsInfo: new Map(),
@@ -25,15 +23,7 @@
         currentPageSelectors: new Set()
     };
 
-    /**
-     * Утилиты для работы с CSS
-     */
     class CSSUtils {
-        /**
-         * Загружает содержимое CSS файла
-         * @param {string} href - URL файла
-         * @returns {Promise<string>} - Содержимое файла
-         */
         static async loadStyleSheetContent(href) {
             try {
                 const response = await fetch(href);
@@ -47,11 +37,6 @@
             }
         }
 
-        /**
-         * Парсит CSS текст и возвращает правила
-         * @param {string} cssText - CSS текст
-         * @returns {CSSRuleList|null} - Список правил
-         */
         static parseCSSText(cssText) {
             try {
                 const styleElement = document.createElement('style');
@@ -68,13 +53,8 @@
             }
         }
 
-        /**
-         * Проверяет, является ли URL локальным
-         * @param {string} url - URL для проверки
-         * @returns {boolean}
-         */
         static isLocalUrl(url) {
-            if (!url) return true; // inline стили
+            if (!url) return true;
             try {
                 const urlObj = new URL(url, window.location.origin);
                 return urlObj.origin === window.location.origin;
@@ -83,39 +63,24 @@
             }
         }
 
-        /**
-         * Нормализует селектор
-         * @param {string} selector - CSS селектор
-         * @returns {string}
-         */
         static normalizeSelector(selector) {
             return selector?.trim() || '';
         }
 
-        /**
-         * Преобразует полный URL в относительный путь
-         * @param {string} href - URL файла
-         * @returns {string} - Относительный путь
-         */
         static getRelativePathFromHref(href) {
             if (!href) return 'inline';
             
             try {
                 const url = new URL(href, window.location.origin);
-                return url.pathname.substring(1); // убираем ведущий слеш
+                return url.pathname.substring(1);
             } catch {
                 return href;
             }
         }
 
-        /**
-         * Получает список всех CSS файлов на текущей странице
-         * @returns {Set<string>} - Множество путей к CSS файлам
-         */
         static getCurrentPageCSSFiles() {
             const cssFiles = new Set();
             
-            // Собираем все link элементы с CSS
             document.querySelectorAll('link[rel="stylesheet"]').forEach(link => {
                 if (link.href) {
                     const relativePath = this.getRelativePathFromHref(link.href);
@@ -123,32 +88,43 @@
                 }
             });
 
-            // Добавляем inline стили
             if (document.querySelectorAll('style').length > 0) {
                 cssFiles.add('inline');
             }
 
             return cssFiles;
         }
+
+        static isSafeSelectorToCheck(selector) {
+            if (!selector) return false;
+            
+            const trimmed = selector.trim();
+            
+            if (trimmed.includes(':')) return false;
+            if (trimmed.includes('::')) return false;
+            if (trimmed.includes('@')) return false;
+            if (trimmed.includes('-webkit-')) return false;
+            if (trimmed.includes('-moz-')) return false;
+            if (trimmed.includes('-ms-')) return false;
+            if (trimmed.includes('-o-')) return false;
+            if (trimmed.includes('--')) return false;
+            if (trimmed.includes('[')) return false;
+            if (trimmed.includes('(')) return false;
+            if (trimmed.includes('+')) return false;
+            if (trimmed.includes('~')) return false;
+            if (trimmed.includes('>')) return false;
+            
+            return /^[a-zA-Z0-9._#-\s,]+$/.test(trimmed);
+        }
     }
 
-    /**
-     * Класс для работы с селекторами
-     */
     class SelectorManager {
-        /**
-         * Добавляет селектор в список
-         * @param {string} selectorText - Текст селектора
-         * @param {string} href - URL файла
-         * @param {string|null} media - Media query
-         */
         static addSelector(selectorText, href, media = null) {
             if (!selectorText) return;
 
             const selectors = selectorText.split(',').map(s => CSSUtils.normalizeSelector(s));
             const relativePath = CSSUtils.getRelativePathFromHref(href);
             
-            // Проверяем, что файл присутствует на текущей странице
             if (!state.currentPageSelectors.has(relativePath)) {
                 return;
             }
@@ -158,12 +134,12 @@
                     state.unusedSelectors.set(selector, {
                         href: relativePath,
                         media,
-                        used: false
+                        used: false,
+                        safe: CSSUtils.isSafeSelectorToCheck(selector)
                     });
                 }
             });
 
-            // Сохраняем информацию о файле
             if (!state.styleSheetsInfo.has(relativePath)) {
                 state.styleSheetsInfo.set(relativePath, []);
             }
@@ -174,24 +150,26 @@
             });
         }
 
-        /**
-         * Проверяет использование селекторов в DOM
-         */
         static checkSelectorsUsage() {
             let unusedCount = 0;
             
             for (const [selector, info] of state.unusedSelectors.entries()) {
                 if (!info.used) {
-                    try {
-                        if (document.querySelector(selector)) {
+                    if (!info.safe) {
+                        info.used = true;
+                        state.unusedSelectors.delete(selector);
+                    } else {
+                        try {
+                            if (document.querySelector(selector)) {
+                                info.used = true;
+                                state.unusedSelectors.delete(selector);
+                            } else {
+                                unusedCount++;
+                            }
+                        } catch (error) {
                             info.used = true;
                             state.unusedSelectors.delete(selector);
-                        } else {
-                            unusedCount++;
                         }
-                    } catch (error) {
-                        // Некорректный селектор, считаем неиспользуемым
-                        unusedCount++;
                     }
                 }
             }
@@ -200,14 +178,12 @@
             UIManager.updateButton(unusedCount);
         }
 
-        /**
-         * Группирует селекторы по файлам для отправки на сервер
-         * @returns {Object}
-         */
         static groupSelectorsByFile() {
             const result = {};
             
             for (const [selector, info] of state.unusedSelectors.entries()) {
+                if (!info.safe) continue;
+                
                 const href = info.href;
                 
                 if (!result[href]) {
@@ -224,14 +200,7 @@
         }
     }
 
-    /**
-     * Класс для обработки CSS правил
-     */
     class RuleProcessor {
-        /**
-         * Обрабатывает стилевой лист
-         * @param {CSSStyleSheet} sheet - Стилевой лист
-         */
         static async processStyleSheet(sheet) {
             let rules;
             
@@ -253,11 +222,6 @@
             }
         }
 
-        /**
-         * Обрабатывает кросс-доменные стили
-         * @param {CSSStyleSheet} sheet - Стилевой лист
-         * @returns {CSSRuleList|null}
-         */
         static async handleCrossOriginStyleSheet(sheet) {
             if (!sheet.href || !CSSUtils.isLocalUrl(sheet.href)) {
                 console.warn(`Стилевой файл недоступен: ${sheet.href}`);
@@ -268,11 +232,6 @@
             return cssText ? CSSUtils.parseCSSText(cssText) : null;
         }
 
-        /**
-         * Обрабатывает отдельное CSS правило
-         * @param {CSSRule} rule - CSS правило
-         * @param {string} href - URL файла
-         */
         static async processRule(rule, href) {
             switch (rule.type) {
                 case CSSRule.STYLE_RULE:
@@ -297,11 +256,6 @@
             }
         }
 
-        /**
-         * Обрабатывает @media правила
-         * @param {CSSMediaRule} mediaRule - Media правило
-         * @param {string} href - URL файла
-         */
         static processMediaRule(mediaRule, href) {
             const media = mediaRule.media.mediaText;
             
@@ -315,19 +269,12 @@
         }
     }
 
-    /**
-     * Класс для управления UI
-     */
     class UIManager {
-        /**
-         * Создает плавающую кнопку с меню
-         */
         static createFloatingButton() {
             if (document.getElementById(CONFIG.BUTTON_ID)) {
-                return; // Кнопка уже существует
+                return;
             }
 
-            // Создаем контейнер
             const container = document.createElement('div');
             container.style.cssText = `
                 position: fixed;
@@ -336,7 +283,6 @@
                 z-index: 9999;
             `;
 
-            // Создаем кнопку
             const button = document.createElement('button');
             button.id = CONFIG.BUTTON_ID;
             button.innerHTML = '0';
@@ -359,7 +305,6 @@
                 justify-content: center;
             `;
 
-            // Создаем меню
             const menu = document.createElement('div');
             menu.id = CONFIG.MENU_ID;
             menu.style.cssText = `
@@ -377,7 +322,6 @@
                 border: 1px solid #ddd;
             `;
 
-            // Пункты меню
             const menuItems = [
                 { text: 'Сохранить данные', action: 'save', icon: '💾' },
                 { text: 'Генерировать файлы', action: 'generate', icon: '⚙️' }
@@ -415,7 +359,6 @@
                 menu.appendChild(menuItem);
             });
 
-            // Добавляем hover эффекты для кнопки
             button.addEventListener('mouseenter', () => {
                 if (!state.isProcessing) {
                     button.style.transform = 'scale(1.1)';
@@ -430,7 +373,6 @@
                 }
             });
 
-            // Обработчик клика по кнопке (показать/скрыть меню)
             button.addEventListener('click', (e) => {
                 e.stopPropagation();
                 this.toggleMenu();
@@ -440,7 +382,6 @@
             container.appendChild(menu);
             document.body.appendChild(container);
 
-            // Скрываем меню при клике вне его
             document.addEventListener('click', () => {
                 this.hideMenu();
             });
@@ -450,9 +391,6 @@
             });
         }
 
-        /**
-         * Показывает/скрывает меню
-         */
         static toggleMenu() {
             const menu = document.getElementById(CONFIG.MENU_ID);
             if (!menu) return;
@@ -466,9 +404,6 @@
             }
         }
 
-        /**
-         * Показывает меню
-         */
         static showMenu() {
             const menu = document.getElementById(CONFIG.MENU_ID);
             if (!menu) return;
@@ -478,9 +413,6 @@
             menu.style.pointerEvents = 'auto';
         }
 
-        /**
-         * Скрывает меню
-         */
         static hideMenu() {
             const menu = document.getElementById(CONFIG.MENU_ID);
             if (!menu) return;
@@ -490,10 +422,6 @@
             menu.style.pointerEvents = 'none';
         }
 
-        /**
-         * Обрабатывает клик по пункту меню
-         * @param {string} action - Действие (save/generate)
-         */
         static async handleMenuClick(action) {
             if (state.isProcessing) {
                 return;
@@ -505,7 +433,6 @@
             try {
                 state.isProcessing = true;
                 
-                // Визуальная индикация загрузки
                 button.innerHTML = '...';
                 button.style.backgroundColor = '#f39c12';
                 button.style.cursor = 'not-allowed';
@@ -530,7 +457,6 @@
             } finally {
                 state.isProcessing = false;
                 
-                // Восстанавливаем состояние кнопки
                 if (button) {
                     button.innerHTML = state.totalUnusedCount.toString();
                     button.style.backgroundColor = '#e74c3c';
@@ -540,10 +466,6 @@
             }
         }
 
-        /**
-         * Сохраняет данные на сервере
-         * @param {Object} data - Данные для сохранения
-         */
         static async saveDataToServer(data) {
             try {
                 const response = await fetch(CONFIG.SERVER_ENDPOINT, {
@@ -577,10 +499,6 @@
             }
         }
 
-        /**
-         * Генерирует файлы на сервере
-         * @param {Object} data - Данные для генерации
-         */
         static async generateFiles(data) {
             try {
                 const response = await fetch(CONFIG.SERVER_ENDPOINT, {
@@ -610,10 +528,6 @@
             }
         }
 
-        /**
-         * Показывает статистику генерации
-         * @param {Object} result - Результат генерации
-         */
         static showGenerationStatistics(result) {
             const stats = result.statistics || {};
             const message = `
@@ -631,11 +545,6 @@
             this.showLargeNotification(message, 'success');
         }
 
-        /**
-         * Форматирует размер в байтах
-         * @param {number} bytes - Размер в байтах
-         * @returns {string} - Отформатированный размер
-         */
         static formatBytes(bytes) {
             if (bytes === 0) return '0 Bytes';
             const k = 1024;
@@ -644,10 +553,6 @@
             return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
         }
 
-        /**
-         * Обновляет текст кнопки
-         * @param {number} count - Количество неиспользуемых селекторов
-         */
         static updateButton(count) {
             const button = document.getElementById(CONFIG.BUTTON_ID);
             if (button) {
@@ -655,32 +560,15 @@
             }
         }
 
-        /**
-         * Показывает уведомление
-         * @param {string} message - Текст сообщения
-         * @param {string} type - Тип уведомления (success, error, info)
-         */
         static showNotification(message, type = 'info') {
             this.createNotification(message, type, false);
         }
 
-        /**
-         * Показывает большое уведомление со статистикой
-         * @param {string} message - Текст сообщения
-         * @param {string} type - Тип уведомления
-         */
         static showLargeNotification(message, type = 'info') {
             this.createNotification(message, type, true);
         }
 
-        /**
-         * Создает уведомление
-         * @param {string} message - Текст сообщения
-         * @param {string} type - Тип уведомления
-         * @param {boolean} isLarge - Большое уведомление
-         */
         static createNotification(message, type = 'info', isLarge = false) {
-            // Удаляем предыдущее уведомление, если есть
             const existingNotification = document.getElementById('unused-css-notification');
             if (existingNotification) {
                 existingNotification.remove();
@@ -689,7 +577,6 @@
             const notification = document.createElement('div');
             notification.id = 'unused-css-notification';
             
-            // Цвета для разных типов
             const colors = {
                 success: '#27ae60',
                 error: '#e74c3c',
@@ -716,7 +603,6 @@
             Object.assign(notification.style, baseStyles);
             notification.textContent = message;
 
-            // Добавляем кнопку закрытия для больших уведомлений
             if (isLarge) {
                 const closeButton = document.createElement('button');
                 closeButton.innerHTML = '✕';
@@ -746,8 +632,7 @@
 
             document.body.appendChild(notification);
 
-            // Автоматически удаляем уведомление
-            const timeout = isLarge ? 15000 : 5000; // 15 сек для больших, 5 сек для обычных
+            const timeout = isLarge ? 15000 : 5000;
             setTimeout(() => {
                 if (notification.parentNode) {
                     notification.remove();
@@ -756,16 +641,9 @@
         }
     }
 
-    /**
-     * Главный класс приложения
-     */
     class UnusedCSSDetector {
-        /**
-         * Инициализация приложения
-         */
         static async init() {
             try {
-                // Получаем список CSS файлов текущей страницы
                 state.currentPageSelectors = CSSUtils.getCurrentPageCSSFiles();
                 
                 await this.loadStyleSheets();
@@ -775,7 +653,6 @@
                 console.log('Remove Unused CSS загружен');
                 console.log('CSS файлы на странице:', Array.from(state.currentPageSelectors));
                 
-                // Экспортируем состояние в глобальную область для отладки
                 window.unusedCSSState = state;
                 
             } catch (error) {
@@ -783,15 +660,11 @@
             }
         }
 
-        /**
-         * Загружает все стилевые листы
-         */
         static async loadStyleSheets() {
             const sheets = Array.from(document.styleSheets);
             
             for (const sheet of sheets) {
                 try {
-                    // Проверяем, что лист относится к файлам текущей страницы
                     const relativePath = CSSUtils.getRelativePathFromHref(sheet.href);
                     if (state.currentPageSelectors.has(relativePath)) {
                         await RuleProcessor.processStyleSheet(sheet);
@@ -804,14 +677,9 @@
             console.log(`Загружено селекторов: ${state.unusedSelectors.size}`);
         }
 
-        /**
-         * Запускает периодическую проверку селекторов
-         */
         static startPeriodicCheck() {
-            // Первоначальная проверка
             SelectorManager.checkSelectorsUsage();
             
-            // Периодическая проверка
             setInterval(() => {
                 if (!state.isProcessing) {
                     SelectorManager.checkSelectorsUsage();
@@ -820,12 +688,8 @@
         }
     }
 
-    /**
-     * Обработчик изменений DOM
-     */
     class DOMChangeHandler {
         static init() {
-            // Наблюдатель за изменениями DOM
             const observer = new MutationObserver((mutations) => {
                 let shouldCheck = false;
                 
@@ -840,7 +704,6 @@
                 });
                 
                 if (shouldCheck && !state.isProcessing) {
-                    // Небольшая задержка для избежания частых проверок
                     clearTimeout(this.checkTimeout);
                     this.checkTimeout = setTimeout(() => {
                         SelectorManager.checkSelectorsUsage();
@@ -857,9 +720,6 @@
         }
     }
 
-    /**
-     * Запуск приложения
-     */
     function startApp() {
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', () => {
@@ -872,7 +732,6 @@
         }
     }
 
-    // Запускаем приложение
     startApp();
 
 })();
