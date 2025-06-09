@@ -4,58 +4,81 @@
  * Copyright 2025 Commeta
  * Released under the GPL v3 or MIT license
  */
- 
 
 (function () {
-    // Config constants
+
+    // Конфигурация приложения для удаления неиспользуемого CSS
     const CONFIG = {
+        // Интервал (в миллисекундах) между проверками/сканированием страницы
         CHECK_INTERVAL: 1000,
+
+        // Путь до серверного скрипта, обрабатывающего запросы по сохранению и генерации CSS
         SERVER_ENDPOINT: '/remove-unused-css/remove-unused-css.php',
+
+        // HTML-ID кнопки, по клику на которую начинается процесс поиска неиспользуемых селекторов
         BUTTON_ID: 'unused-css-button',
+
+        // HTML-ID контейнера, в котором отображается меню с результатами и дополнительными действиями
         MENU_ID: 'unused-css-menu',
+
+        // HTML-ID блока настроек фильтрации (какие правила/селекторы сохранять)
         SETTINGS_ID: 'unused-css-settings'
     };
 
-    // State
+
+    // Состояние приложения: хранит данные для анализа и настройки очистки CSS
     let state = {
+        // Map для хранения неиспользованных селекторов: ключ — селектор, значение — детали использования
         unusedSelectors: new Map(),
+
+        // Map для информации о стилевых таблицах (CSS-файлах): ключ — URL или путь, значение — объект с метаданными
         styleSheetsInfo: new Map(),
+
+        // Флаг, указывающий, идёт ли сейчас процесс анализа/генерации
         isProcessing: false,
+
+        // Общее количество неиспользованных селекторов на всех страницах
         totalUnusedCount: 0,
+
+        // Set селекторов, найденных на текущей странице
         currentPageSelectors: new Set(),
+
+        // Настройки фильтрации/сохранения разных видов правил и селекторов
         settings: {
-            media: true,
-            media_print: true,
-            keyframes: true,
-            font_face: true,
-            import: true,
-            supports: true,
-            page: true,
-            charset: true,
-            counter_style: true,
-            layer: true,
-            pseudo_classes: true,
-            pseudo_elements: true,
-            attribute_selectors: true,
-            css_variables: true,
-            vendor_prefixes: true,
-            adjacent_selectors: true,
-            child_selectors: true,
-            general_siblings: true,
-            css_functions: true,
-            animations: true,
-            transforms: true,
-            transitions: true,
-            percentages: true,
-            escapes: true,
-            colors: true,
-            gradients: true,
-            filters: true,
-            masks: true,
-            nth_selectors: true,
-            logical_selectors: true
+            media: true,               // флаг сохранения @media
+            media_print: true,         // флаг сохранения @media print
+            keyframes: true,           // флаг сохранения анимаций @keyframes
+            font_face: true,           // флаг сохранения @font-face
+            import: true,              // флаг сохранения @import
+            supports: true,            // флаг сохранения @supports
+            page: true,                // флаг сохранения @page
+            charset: true,             // флаг сохранения @charset
+            counter_style: true,       // флаг сохранения @counter-style
+            layer: true,               // флаг сохранения @layer
+            pseudo_classes: true,      // флаг сохранения псевдоклассов (:hover, :nth-child и т.д.)
+            pseudo_elements: true,     // флаг сохранения псевдоэлементов (::before, ::after и т.д.)
+            attribute_selectors: true, // флаг сохранения селекторов по атрибутам ([data-*], [href] и т.п.)
+            css_variables: true,       // флаг сохранения CSS-переменных (--var-name)
+            vendor_prefixes: true,     // флаг сохранения свойств с префиксами (-webkit-, -moz- и др.)
+            adjacent_selectors: true,  // флаг сохранения селекторов соседних элементов (E + F)
+            child_selectors: true,     // флаг сохранения селекторов дочерних элементов (E > F)
+            general_siblings: true,    // флаг сохранения селекторов общих соседних элементов (E ~ F)
+            css_functions: true,       // флаг сохранения правил с функциями (calc(), url(), rgb() и др.)
+            animations: true,          // флаг сохранения анимационных свойств (animation, transition)
+            transforms: true,          // флаг сохранения трансформаций (transform)
+            transitions: true,         // флаг сохранения переходов (transition)
+            percentages: true,         // флаг сохранения значений в процентах (50%, 100%)
+            escapes: true,             // флаг сохранения escape-последовательностей (\\3020 и т.п.)
+            colors: true,              // флаг сохранения цветовых функций (rgb(), hsl())
+            gradients: true,           // флаг сохранения градиентов (linear-gradient, radial-gradient)
+            filters: true,             // флаг сохранения фильтров (filter, backdrop-filter)
+            masks: true,               // флаг сохранения масок (mask, clip-path)
+            nth_selectors: true,       // флаг сохранения :nth-child, :nth-of-type
+            logical_selectors: true    // флаг сохранения логических селекторов (:not(), :is(), :has())
         }
     };
+
+
 
     // CSS Utilities
     class CSSUtils {
@@ -91,14 +114,26 @@
             ];
             if (critical.includes(trimmed.toLowerCase())) return false;
 
-            // Safe selector patterns
+
+            // Набор регулярных выражений для безопасных (простых) селекторов CSS
             const safePatterns = [
+                // тег (например, div, span)
                 /^[a-zA-Z][a-zA-Z0-9-_]*$/,
+
+                // класс (например, .container, .btn-primary)
                 /^\.[a-zA-Z][a-zA-Z0-9-_]*$/,
+
+                // идентификатор (например, #header, #main-content)
                 /^#[a-zA-Z][a-zA-Z0-9-_]*$/,
+
+                // тег с классом (например, button.primary, li.active)
                 /^[a-zA-Z][a-zA-Z0-9-_]*\.[a-zA-Z][a-zA-Z0-9-_]*$/,
+
+                // тег с идентификатором (например, div#footer, section#intro)
                 /^[a-zA-Z][a-zA-Z0-9-_]*#[a-zA-Z][a-zA-Z0-9-_]*$/
             ];
+
+
             return safePatterns.some(pattern => pattern.test(trimmed));
         }
 
