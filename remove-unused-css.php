@@ -323,13 +323,34 @@ class RemoveUnusedCSSProcessor
 
     private function getFullFilePath(string $relativePath): ?string
     {
-        $fullPath = $this->documentRoot . '/' . $relativePath;
-        $resolvedFullPath = realpath($fullPath);
-        $resolvedRoot = realpath($this->documentRoot);
-        if ($resolvedFullPath && $resolvedRoot && strpos($resolvedFullPath, $resolvedRoot) === 0) {
-            return $resolvedFullPath;
+        if (strpos($relativePath, "\0") !== false) {
+            return null;
         }
-        return null;
+
+        $relativePath = str_replace('\\', '/', $relativePath);
+        $relativePath = ltrim($relativePath, '/');
+
+        if (preg_match('#\.\.(?:/|$)#', $relativePath)) {
+            return null;
+        }
+
+        $fullPath      = $this->documentRoot . '/' . $relativePath;
+        $resolvedFull  = realpath($fullPath);
+        $resolvedRoot  = realpath($this->documentRoot);
+
+        if (!$resolvedFull || !$resolvedRoot) {
+            return null;
+        }
+
+        if (strpos($resolvedFull, $resolvedRoot) !== 0) {
+            return null;
+        }
+
+        if (!is_file($resolvedFull) || !is_readable($resolvedFull)) {
+            return null;
+        }
+
+        return $resolvedFull;
     }
 
     /**
