@@ -5,7 +5,7 @@
  * Copyright 2025 Commeta
  * Released under the GPL v3 or MIT license
  */
- 
+
 declare(strict_types=1);
 
 if (!file_exists(__DIR__ . '/vendor/autoload.php')) {
@@ -24,20 +24,22 @@ use Sabberworm\CSS\Renderable;
 
 class RemoveUnusedCSSProcessor
 {
-    private const SF = 'data/unused_selectors.json';
-    private const CD = 'css/';
-    private const CF = 'remove-unused-css.min.css';
-    private const MFS = 10 * 1024 * 1024;
-    private const BD = 'backup/';
-    private const SET = 'data/settings.json';
-    private const VER = 'data/version.json';
+    // File and directory constants
+    private const SELECTORS_FILE = 'data/unused_selectors.json';
+    private const CSS_DIR = 'css/';
+    private const COMBINED_FILE = 'remove-unused-css.min.css';
+    private const MAX_FILE_SIZE = 10 * 1024 * 1024;
+    private const BACKUP_DIR = 'backup/';
+    private const SETTINGS_FILE = 'data/settings.json';
+    private const VERSION_FILE = 'data/version.json';
 
-    private string $dr;
-    private string $bd;
-    private array $e = [];
-    private array $pf = [];
-    private array $st = [];
-    private array $cfg = [
+    // Paths and state
+    private string $documentRoot;
+    private string $baseDir;
+    private array $errors = [];
+    private array $processedFiles = [];
+    private array $statistics = [];
+    private array $settings = [
         'media' => true,
         'media_print' => true,
         'keyframes' => true,
@@ -70,84 +72,84 @@ class RemoveUnusedCSSProcessor
         'logical_selectors' => true,
         'version' => 1
     ];
-    private array $cp = [];
-    private array $cs = [
+    private array $criticalPatterns = [];
+    private array $criticalSelectors = [
         'html', 'body', '*', ':root', 'head', 'title', 'meta', 'link', 'script', 'style', 'base'
     ];
 
     public function __construct()
     {
-        $this->dr = $_SERVER['DOCUMENT_ROOT'] ?? '';
-        $this->bd = dirname(__FILE__);
+        $this->documentRoot = $_SERVER['DOCUMENT_ROOT'] ?? '';
+        $this->baseDir = dirname(__FILE__);
         $this->loadSettings();
     }
 
     private function loadSettings(): void
     {
-        $cf = $this->bd . '/' . self::SET;
-        if (file_exists($cf)) {
-            $c = file_get_contents($cf);
-            $s = json_decode($c, true);
-            if (json_last_error() === JSON_ERROR_NONE && is_array($s)) {
-                $this->cfg = array_merge($this->cfg, $s);
+        $settingsPath = $this->baseDir . '/' . self::SETTINGS_FILE;
+        if (file_exists($settingsPath)) {
+            $contents = file_get_contents($settingsPath);
+            $decoded = json_decode($contents, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                $this->settings = array_merge($this->settings, $decoded);
             }
         }
         $this->updateCriticalPatterns();
     }
 
-    private function saveSettings(array $s): void
+    private function saveSettings(array $settings): void
     {
-        $cf = $this->bd . '/' . self::SET;
-        $this->ensureDirectoryExists(dirname($cf));
-        $s['version'] = ($this->cfg['version'] ?? 1) + 1;
-        $this->cfg = $s;
-        $j = json_encode($s, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-        if ($j !== false) {
-            file_put_contents($cf, $j, LOCK_EX);
+        $settingsPath = $this->baseDir . '/' . self::SETTINGS_FILE;
+        $this->ensureDirectoryExists(dirname($settingsPath));
+        $settings['version'] = ($this->settings['version'] ?? 1) + 1;
+        $this->settings = $settings;
+        $json = json_encode($settings, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+        if ($json !== false) {
+            file_put_contents($settingsPath, $json, LOCK_EX);
         }
     }
 
     private function clearOldData(): void
     {
-        $sf = $this->bd . '/' . self::SF;
-        if (file_exists($sf)) {
-            unlink($sf);
+        $selectorsPath = $this->baseDir . '/' . self::SELECTORS_FILE;
+        if (file_exists($selectorsPath)) {
+            unlink($selectorsPath);
         }
     }
 
     private function updateCriticalPatterns(): void
     {
-        $this->cp = [];
-        if ($this->cfg['media']) $this->cp[] = '/^@media/i';
-        if ($this->cfg['media_print']) $this->cp[] = '/^@media\s+print/i';
-        if ($this->cfg['keyframes']) $this->cp[] = '/^@keyframes/i';
-        if ($this->cfg['font_face']) $this->cp[] = '/^@font-face/i';
-        if ($this->cfg['import']) $this->cp[] = '/^@import/i';
-        if ($this->cfg['supports']) $this->cp[] = '/^@supports/i';
-        if ($this->cfg['page']) $this->cp[] = '/^@page/i';
-        if ($this->cfg['charset']) $this->cp[] = '/^@charset/i';
-        if ($this->cfg['counter_style']) $this->cp[] = '/^@counter-style/i';
-        if ($this->cfg['layer']) $this->cp[] = '/^@layer/i';
-        if ($this->cfg['pseudo_classes']) $this->cp[] = '/:[a-z-]+(?:\([^)]*\))?/i';
-        if ($this->cfg['pseudo_elements']) $this->cp[] = '/::[a-z-]+/';
-        if ($this->cfg['attribute_selectors']) $this->cp[] = '/\[[\w\-="\':\s]*\]/';
-        if ($this->cfg['css_variables']) $this->cp[] = '/--[\w\-]+/';
-        if ($this->cfg['vendor_prefixes']) $this->cp[] = '/-webkit-|-moz-|-ms-|-o-/';
-        if ($this->cfg['adjacent_selectors']) $this->cp[] = '/\+/';
-        if ($this->cfg['child_selectors']) $this->cp[] = '/>/';
-        if ($this->cfg['general_siblings']) $this->cp[] = '/~/';
-        if ($this->cfg['css_functions']) $this->cp[] = '/\(/';
-        if ($this->cfg['animations']) $this->cp[] = '/animation|keyframes/i';
-        if ($this->cfg['transforms']) $this->cp[] = '/transform/i';
-        if ($this->cfg['transitions']) $this->cp[] = '/transition/i';
-        if ($this->cfg['percentages']) $this->cp[] = '/\d+%/';
-        if ($this->cfg['escapes']) $this->cp[] = '/\\\\/';
-        if ($this->cfg['colors']) $this->cp[] = '/rgb\(|rgba\(|hsl\(|hsla\(/i';
-        if ($this->cfg['gradients']) $this->cp[] = '/linear-gradient|radial-gradient/i';
-        if ($this->cfg['filters']) $this->cp[] = '/filter|backdrop-filter/i';
-        if ($this->cfg['masks']) $this->cp[] = '/mask|clip-path/i';
-        if ($this->cfg['nth_selectors']) $this->cp[] = '/nth-child|nth-of-type/i';
-        if ($this->cfg['logical_selectors']) $this->cp[] = '/not\(|is\(|where\(|has\(/i';
+        $this->criticalPatterns = [];
+        if ($this->settings['media']) $this->criticalPatterns[] = '/^@media/i';
+        if ($this->settings['media_print']) $this->criticalPatterns[] = '/^@media\s+print/i';
+        if ($this->settings['keyframes']) $this->criticalPatterns[] = '/^@keyframes/i';
+        if ($this->settings['font_face']) $this->criticalPatterns[] = '/^@font-face/i';
+        if ($this->settings['import']) $this->criticalPatterns[] = '/^@import/i';
+        if ($this->settings['supports']) $this->criticalPatterns[] = '/^@supports/i';
+        if ($this->settings['page']) $this->criticalPatterns[] = '/^@page/i';
+        if ($this->settings['charset']) $this->criticalPatterns[] = '/^@charset/i';
+        if ($this->settings['counter_style']) $this->criticalPatterns[] = '/^@counter-style/i';
+        if ($this->settings['layer']) $this->criticalPatterns[] = '/^@layer/i';
+        if ($this->settings['pseudo_classes']) $this->criticalPatterns[] = '/:[a-z-]+(?:\([^)]*\))?/i';
+        if ($this->settings['pseudo_elements']) $this->criticalPatterns[] = '/::[a-z-]+/';
+        if ($this->settings['attribute_selectors']) $this->criticalPatterns[] = '/\[[\w\-="\':\s]*\]/';
+        if ($this->settings['css_variables']) $this->criticalPatterns[] = '/--[\w\-]+/';
+        if ($this->settings['vendor_prefixes']) $this->criticalPatterns[] = '/-webkit-|-moz-|-ms-|-o-/';
+        if ($this->settings['adjacent_selectors']) $this->criticalPatterns[] = '/\+/';
+        if ($this->settings['child_selectors']) $this->criticalPatterns[] = '/>/';
+        if ($this->settings['general_siblings']) $this->criticalPatterns[] = '/~/';
+        if ($this->settings['css_functions']) $this->criticalPatterns[] = '/\(/';
+        if ($this->settings['animations']) $this->criticalPatterns[] = '/animation|keyframes/i';
+        if ($this->settings['transforms']) $this->criticalPatterns[] = '/transform/i';
+        if ($this->settings['transitions']) $this->criticalPatterns[] = '/transition/i';
+        if ($this->settings['percentages']) $this->criticalPatterns[] = '/\d+%/';
+        if ($this->settings['escapes']) $this->criticalPatterns[] = '/\\\\/';
+        if ($this->settings['colors']) $this->criticalPatterns[] = '/rgb\(|rgba\(|hsl\(|hsla\(/i';
+        if ($this->settings['gradients']) $this->criticalPatterns[] = '/linear-gradient|radial-gradient/i';
+        if ($this->settings['filters']) $this->criticalPatterns[] = '/filter|backdrop-filter/i';
+        if ($this->settings['masks']) $this->criticalPatterns[] = '/mask|clip-path/i';
+        if ($this->settings['nth_selectors']) $this->criticalPatterns[] = '/nth-child|nth-of-type/i';
+        if ($this->settings['logical_selectors']) $this->criticalPatterns[] = '/not\(|is\(|where\(|has\(/i';
     }
 
     public function processRequest(): void
@@ -157,20 +159,20 @@ class RemoveUnusedCSSProcessor
                 $this->sendError(405, 'Method Not Allowed');
                 return;
             }
-            $d = $this->getInputData();
-            if (!$d) {
+            $requestData = $this->getInputData();
+            if (!$requestData) {
                 $this->sendError(400, 'Invalid JSON data');
                 return;
             }
-            $a = $_SERVER['HTTP_X_ACTION'] ?? ($_GET['action'] ?? 'save');
-            if ($a === 'save') {
-                $this->saveUnusedSelectors($d);
+            $action = $_SERVER['HTTP_X_ACTION'] ?? ($_GET['action'] ?? 'save');
+            if ($action === 'save') {
+                $this->saveUnusedSelectors($requestData);
                 $this->sendSuccess('Данные успешно сохранены');
-            } elseif ($a === 'generate') {
-                $this->generateCSSFiles($d);
+            } elseif ($action === 'generate') {
+                $this->generateCSSFiles($requestData);
                 $this->sendSuccessWithStatistics('Файлы успешно сгенерированы');
-            } elseif ($a === 'settings' || $a === 'saveSettings') {
-                $this->handleSettings($d);
+            } elseif ($action === 'settings' || $action === 'saveSettings') {
+                $this->handleSettings($requestData);
             } else {
                 $this->sendError(400, 'Unknown action');
             }
@@ -180,12 +182,12 @@ class RemoveUnusedCSSProcessor
         }
     }
 
-    private function handleSettings(array $d): void
+    private function handleSettings(array $requestData): void
     {
-        if (isset($d['action']) && $d['action'] === 'save' && isset($d['settings'])) {
-            $old_cfg = $this->cfg;
-            $this->saveSettings($d['settings']);
-            $need_reset = false;
+        if (isset($requestData['action']) && $requestData['action'] === 'save' && isset($requestData['settings'])) {
+            $previousSettings = $this->settings;
+            $this->saveSettings($requestData['settings']);
+            $needReload = false;
             foreach ([
                 'media', 'media_print', 'keyframes', 'font_face', 'import', 'supports', 'page', 'charset',
                 'counter_style', 'layer', 'pseudo_classes', 'pseudo_elements', 'attribute_selectors',
@@ -193,17 +195,17 @@ class RemoveUnusedCSSProcessor
                 'css_functions', 'animations', 'transforms', 'transitions', 'percentages', 'escapes', 'colors',
                 'gradients', 'filters', 'masks', 'nth_selectors', 'logical_selectors'
             ] as $key) {
-                if (($old_cfg[$key] ?? true) !== ($d['settings'][$key] ?? true)) {
-                    $need_reset = true;
+                if (($previousSettings[$key] ?? true) !== ($requestData['settings'][$key] ?? true)) {
+                    $needReload = true;
                     break;
                 }
             }
-            if ($need_reset) {
+            if ($needReload) {
                 $this->clearOldData();
             }
-            $this->sendSuccessWithData('Настройки сохранены', ['need_reload' => $need_reset]);
-        } elseif (isset($d['action']) && $d['action'] === 'load') {
-            $this->sendSuccessWithData('Настройки загружены', ['settings' => $this->cfg]);
+            $this->sendSuccessWithData('Настройки сохранены', ['need_reload' => $needReload]);
+        } elseif (isset($requestData['action']) && $requestData['action'] === 'load') {
+            $this->sendSuccessWithData('Настройки загружены', ['settings' => $this->settings]);
         } else {
             $this->sendError(400, 'Invalid settings request');
         }
@@ -211,166 +213,142 @@ class RemoveUnusedCSSProcessor
 
     private function getInputData(): ?array
     {
-        $i = file_get_contents('php://input');
-        if (!$i) return null;
-        $d = json_decode($i, true);
+        $input = file_get_contents('php://input');
+        if (!$input) return null;
+        $data = json_decode($input, true);
         if (json_last_error() !== JSON_ERROR_NONE) return null;
-        return is_array($d) ? $d : null;
+        return is_array($data) ? $data : null;
     }
 
-    private function saveUnusedSelectors(array $d): void
+    private function saveUnusedSelectors(array $selectorData): void
     {
-        $ms = $this->loadMasterSelectors();
-        $this->updateSelectorsUsage($ms, $d);
-        $this->saveMasterSelectors($ms);
-        $this->pf = array_keys($d);
+        $masterSelectors = $this->loadMasterSelectors();
+        $this->updateSelectorsUsage($masterSelectors, $selectorData);
+        $this->saveMasterSelectors($masterSelectors);
+        $this->processedFiles = array_keys($selectorData);
     }
 
-    private function generateCSSFiles(array $cpd): void
+    private function generateCSSFiles(array $selectorsPerFile): void
     {
-        $ms = $this->loadMasterSelectors();
-        $this->updateSelectorsUsage($ms, $cpd);
-        $this->saveMasterSelectors($ms);
-        $this->createBackup($ms);
-        $this->generateCleanCssFiles($ms);
+        $masterSelectors = $this->loadMasterSelectors();
+        $this->updateSelectorsUsage($masterSelectors, $selectorsPerFile);
+        $this->saveMasterSelectors($masterSelectors);
+        $this->createBackup($masterSelectors);
+        $this->generateCleanCssFiles($masterSelectors);
     }
 
     private function loadMasterSelectors(): array
     {
-        $sf = $this->bd . '/' . self::SF;
-        if (file_exists($sf)) {
-            $c = file_get_contents($sf);
-            $s = json_decode($c, true);
-            if (json_last_error() === JSON_ERROR_NONE && is_array($s)) {
-                return $s;
+        $selectorsPath = $this->baseDir . '/' . self::SELECTORS_FILE;
+        if (file_exists($selectorsPath)) {
+            $contents = file_get_contents($selectorsPath);
+            $decoded = json_decode($contents, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                return $decoded;
             }
         }
         return [];
     }
 
-    private function saveMasterSelectors(array $ms): void
+    private function saveMasterSelectors(array $masterSelectors): void
     {
-        $sf = $this->bd . '/' . self::SF;
-        $this->ensureDirectoryExists(dirname($sf));
-        $j = json_encode($ms, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-        if ($j === false) {
+        $selectorsPath = $this->baseDir . '/' . self::SELECTORS_FILE;
+        $this->ensureDirectoryExists(dirname($selectorsPath));
+        $json = json_encode($masterSelectors, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+        if ($json === false) {
             throw new RuntimeException('Не удалось сериализовать селекторы в JSON');
         }
-        if (file_put_contents($sf, $j, LOCK_EX) === false) {
+        if (file_put_contents($selectorsPath, $json, LOCK_EX) === false) {
             throw new RuntimeException('Не удалось сохранить файл селекторов');
         }
     }
 
-    private function updateSelectorsUsage(array &$ms, array $d): void
+    private function updateSelectorsUsage(array &$masterSelectors, array $selectorsData): void
     {
-        foreach ($d as $h => $s) {
-            $rp = $this->normalizeFilePath($h);
-            if (!isset($ms[$rp])) {
-                $ms[$rp] = [];
-                $fp = $this->getFullFilePath($rp);
-                if ($fp && file_exists($fp)) {
-                    $this->initializeFileSelectors($fp, $ms[$rp]);
+        foreach ($selectorsData as $relativePath => $selectors) {
+            $normalizedPath = $this->normalizeFilePath($relativePath);
+            if (!isset($masterSelectors[$normalizedPath])) {
+                $masterSelectors[$normalizedPath] = [];
+                $fullPath = $this->getFullFilePath($normalizedPath);
+                if ($fullPath && file_exists($fullPath)) {
+                    $this->initializeFileSelectors($fullPath, $masterSelectors[$normalizedPath]);
                 }
             }
-            foreach ($s as $sel_data) {
-                $sel = $sel_data['selector'] ?? '';
-                if ($sel && isset($ms[$rp][$sel])) {
-                    $ms[$rp][$sel] = 'used';
+            foreach ($selectors as $selectorInfo) {
+                $selector = $selectorInfo['selector'] ?? '';
+                if ($selector && isset($masterSelectors[$normalizedPath][$selector])) {
+                    $masterSelectors[$normalizedPath][$selector] = 'used';
                 }
             }
         }
     }
 
-    private function initializeFileSelectors(string $fp, array &$s): void
+    private function initializeFileSelectors(string $filePath, array &$selectors): void
     {
         try {
-            $cc = file_get_contents($fp);
-            if ($cc === false) {
-                throw new RuntimeException("Не удалось прочитать файл: {$fp}");
+            $cssContent = file_get_contents($filePath);
+            if ($cssContent === false) {
+                throw new RuntimeException("Не удалось прочитать файл: {$filePath}");
             }
-            $p = new Parser($cc);
-            $cd = $p->parse();
-            $this->collectSelectorsFromDocument($cd, $s);
+            $parser = new Parser($cssContent);
+            $cssDocument = $parser->parse();
+            $this->collectSelectorsFromDocument($cssDocument, $selectors);
         } catch (Exception $e) {
-            $this->e[] = "Ошибка инициализации селекторов для файла {$fp}: " . $e->getMessage();
+            $this->errors[] = "Ошибка инициализации селекторов для файла {$filePath}: " . $e->getMessage();
         }
     }
 
-    private function collectSelectorsFromDocument($cc, array &$s): void
+    private function collectSelectorsFromDocument($cssDocument, array &$selectors): void
     {
-        foreach ($cc->getContents() as $r) {
-            if ($r instanceof DeclarationBlock) {
-                $so = $r->getSelectors();
-                foreach ($so as $soj) {
-                    $sel = trim((string)$soj);
-                    if (!empty($sel)) {
-                        $s[$sel] = $this->isSelectorSafeToRemove($sel) ? 'unused' : 'used';
+        foreach ($cssDocument->getContents() as $rule) {
+            if ($rule instanceof DeclarationBlock) {
+                $selectorObjects = $rule->getSelectors();
+                foreach ($selectorObjects as $selectorObject) {
+                    $selector = trim((string)$selectorObject);
+                    if (!empty($selector)) {
+                        $selectors[$selector] = $this->isSelectorSafeToRemove($selector) ? 'unused' : 'used';
                     }
                 }
-            } elseif ($r instanceof AtRuleBlock) {
-                $this->collectSelectorsFromDocument($r, $s);
+            } elseif ($rule instanceof AtRuleBlock) {
+                $this->collectSelectorsFromDocument($rule, $selectors);
             }
         }
     }
 
-    private function normalizeFilePath(string $p): string
+    private function normalizeFilePath(string $path): string
     {
-        $p = parse_url($p, PHP_URL_PATH) ?: $p;
-        return ltrim($p, '/');
+        $parsedPath = parse_url($path, PHP_URL_PATH) ?: $path;
+        return ltrim($parsedPath, '/');
     }
 
-    private function getFullFilePath(string $rp): ?string
+    private function getFullFilePath(string $relativePath): ?string
     {
-        $fp = $this->dr . '/' . $rp;
-        $rp2 = realpath($fp);
-        $rdr = realpath($this->dr);
-        if ($rp2 && $rdr && strpos($rp2, $rdr) === 0) {
-            return $rp2;
+        $fullPath = $this->documentRoot . '/' . $relativePath;
+        $resolvedFullPath = realpath($fullPath);
+        $resolvedRoot = realpath($this->documentRoot);
+        if ($resolvedFullPath && $resolvedRoot && strpos($resolvedFullPath, $resolvedRoot) === 0) {
+            return $resolvedFullPath;
         }
         return null;
-    }
-
-    private function createBackup2(array $ms): void
-    {
-        return;
-        $bd = $this->bd . '/' . self::BD . date('Y-m-d_H-i-s') . '/';
-        $this->ensureDirectoryExists($bd);
-        foreach ($ms as $rp => $s) {
-            $fp = $this->getFullFilePath($rp);
-            if ($fp && file_exists($fp)) {
-                $bp = $bd . $rp;
-                $this->ensureDirectoryExists(dirname($bp));
-                copy($fp, $bp);
-            }
-        }
-        $mf = $this->bd . '/' . self::CD . self::CF;
-        if (file_exists($mf)) {
-            copy($mf, $bd . self::CF);
-        }
     }
 
     /**
      * Создаёт бэкап текущих CSS-файлов из подкаталога css/
      *
-     * @param array $ms — master-селекторы (не используются внутри бэкапа, но сохраняются для
+     * @param array $masterSelectors — master-селекторы (не используются внутри бэкапа, но сохраняются для
      *                   совместимости сигнатуры)
      */
-    private function createBackup(array $ms): void
+    private function createBackup(array $masterSelectors): void
     {
-        // имя новой папки типа backup/2025-06-09_04-30-15/
         $timestamp = date('Y-m-d_H-i-s');
-        $backupDir = $this->bd . '/' . self::BD . $timestamp . '/';
+        $backupDir = $this->baseDir . '/' . self::BACKUP_DIR . $timestamp . '/';
         $this->ensureDirectoryExists($backupDir);
 
-        // путь к каталогу с очищенными CSS
-        $cssDir = $this->bd . '/' . self::CD;
-
-        // если его нет — ничего не бэкапим
+        $cssDir = $this->baseDir . '/' . self::CSS_DIR;
         if (!is_dir($cssDir)) {
             return;
         }
 
-        // рекурсивно собираем все файлы из css/
         $iterator = new \RecursiveIteratorIterator(
             new \RecursiveDirectoryIterator($cssDir, \FilesystemIterator::SKIP_DOTS),
             \RecursiveIteratorIterator::SELF_FIRST
@@ -379,285 +357,281 @@ class RemoveUnusedCSSProcessor
         foreach ($iterator as $file) {
             /** @var \SplFileInfo $file */
             if ($file->isFile() && strtolower($file->getExtension()) === 'css') {
-                // относительный путь внутри css/, например "sub/style.min.css"
                 $relative = substr($file->getPathname(), strlen($cssDir));
-                // создаём ту же структуру в backup/YYYY.../
-                $targetPath = $backupDir . self::CD . $relative;
+                $targetPath = $backupDir . self::CSS_DIR . $relative;
                 $this->ensureDirectoryExists(dirname($targetPath));
                 copy($file->getPathname(), $targetPath);
             }
         }
 
-        // бэкап объединённого минифицированного файла
-        $combined = $cssDir . self::CF;
+        $combined = $cssDir . self::COMBINED_FILE;
         if (file_exists($combined)) {
-            copy($combined, $backupDir . self::CD . self::CF);
+            copy($combined, $backupDir . self::CSS_DIR . self::COMBINED_FILE);
         }
     }
 
-
-    
-    private function generateCleanCssFiles(array $ms): void
+    private function generateCleanCssFiles(array $masterSelectors): void
     {
-        $cd = $this->bd . '/' . self::CD;
-        $this->ensureDirectoryExists($cd);
-        $cc = '';
-        $ic = '';
-        $tos = 0;
-        $tfs = 0;
-        $tsr = 0;
-        $gf = 0;
-        foreach ($ms as $rp => $s) {
+        $cssDir = $this->baseDir . '/' . self::CSS_DIR;
+        $this->ensureDirectoryExists($cssDir);
+
+        $combinedContent = '';
+        $importCharset = '';
+        $totalOriginalSize = 0;
+        $totalFinalSize = 0;
+        $totalRemovedSelectors = 0;
+        $generatedFileCount = 0;
+        foreach ($masterSelectors as $relativePath => $selectors) {
             try {
-                $fp = $this->getFullFilePath($rp);
-                if (!$fp || !file_exists($fp) || !is_readable($fp)) {
-                    $this->e[] = "Файл не найден или недоступен: {$rp}";
+                $fullPath = $this->getFullFilePath($relativePath);
+                if (!$fullPath || !file_exists($fullPath) || !is_readable($fullPath)) {
+                    $this->errors[] = "Файл не найден или недоступен: {$relativePath}";
                     continue;
                 }
-                $os = filesize($fp);
-                $tos += $os;
-                $r = $this->processFile($fp, $s);
-                if ($r && !empty($r['css'])) {
-                    $ccp = $cd . $rp;
-                    $this->ensureDirectoryExists(dirname($ccp));
-                    $mcss = $this->minifyCss($r['css']);
-                    if (file_put_contents($ccp, $mcss) !== false) {
-                        $this->pf[] = $rp;
-                        $gf++;
-                        $fs = strlen($mcss);
-                        $tfs += $fs;
-                        $tsr += $r['removed_selectors'];
-                        $ic .= ($r['import_charset'] ?? '');
-                        $cc .= $mcss . "\n\n";
+                $originalSize = filesize($fullPath);
+                $totalOriginalSize += $originalSize;
+                $result = $this->processFile($fullPath, $selectors);
+                if ($result && !empty($result['css'])) {
+                    $cleanCssPath = $cssDir . $relativePath;
+                    $this->ensureDirectoryExists(dirname($cleanCssPath));
+                    $minifiedCss = $this->minifyCss($result['css']);
+                    if (file_put_contents($cleanCssPath, $minifiedCss) !== false) {
+                        $this->processedFiles[] = $relativePath;
+                        $generatedFileCount++;
+                        $finalSize = strlen($minifiedCss);
+                        $totalFinalSize += $finalSize;
+                        $totalRemovedSelectors += $result['removed_selectors'];
+                        $importCharset .= ($result['import_charset'] ?? '');
+                        $combinedContent .= $minifiedCss . "\n\n";
                     } else {
-                        $this->e[] = "Не удалось сохранить файл: {$ccp}";
+                        $this->errors[] = "Не удалось сохранить файл: {$cleanCssPath}";
                     }
                 }
             } catch (Exception $e) {
-                $this->e[] = "Ошибка обработки файла {$rp}: " . $e->getMessage();
+                $this->errors[] = "Ошибка обработки файла {$relativePath}: " . $e->getMessage();
             }
         }
-        $cs = 0;
-        if (!empty($cc)) {
-            $cp = $cd . self::CF;
-            $fc = $ic . $cc;
-            $cs = strlen($fc);
-            if (file_put_contents($cp, $fc) !== false) {
-                $gf++;
+        $combinedSize = 0;
+        if (!empty($combinedContent)) {
+            $combinedPath = $cssDir . self::COMBINED_FILE;
+            $finalCombinedContent = $importCharset . $combinedContent;
+            $combinedSize = strlen($finalCombinedContent);
+            if (file_put_contents($combinedPath, $finalCombinedContent) !== false) {
+                $generatedFileCount++;
             } else {
-                $this->e[] = "Не удалось создать объединенный файл: {$cp}";
+                $this->errors[] = "Не удалось создать объединенный файл: {$combinedPath}";
             }
         }
-        $this->st = [
-            'processed_files' => count($this->pf),
-            'generated_files' => $gf,
-            'combined_file' => !empty($cc),
-            'original_size' => $tos,
-            'final_size' => $tfs,
-            'combined_size' => $cs,
-            'bytes_saved' => $tos - $tfs,
-            'selectors_removed' => $tsr
+        $this->statistics = [
+            'processed_files' => count($this->processedFiles),
+            'generated_files' => $generatedFileCount,
+            'combined_file' => !empty($combinedContent),
+            'original_size' => $totalOriginalSize,
+            'final_size' => $totalFinalSize,
+            'combined_size' => $combinedSize,
+            'bytes_saved' => $totalOriginalSize - $totalFinalSize,
+            'selectors_removed' => $totalRemovedSelectors
         ];
     }
 
-    private function processFile(string $fp, array $ss): ?array
+    private function processFile(string $filePath, array $selectors): ?array
     {
-        $fs = filesize($fp);
-        if ($fs > self::MFS) {
-            throw new RuntimeException("Файл слишком большой: {$fp}");
+        $fileSize = filesize($filePath);
+        if ($fileSize > self::MAX_FILE_SIZE) {
+            throw new RuntimeException("Файл слишком большой: {$filePath}");
         }
-        $cc = file_get_contents($fp);
-        if ($cc === false) {
-            throw new RuntimeException("Не удалось прочитать файл: {$fp}");
+        $cssContent = file_get_contents($filePath);
+        if ($cssContent === false) {
+            throw new RuntimeException("Не удалось прочитать файл: {$filePath}");
         }
         try {
-            $p = new Parser($cc);
-            $cd = $p->parse();
-            $ic = '';
-            $rs = $this->removeUnusedRules($cd, $ss, $ic);
+            $parser = new Parser($cssContent);
+            $cssDocument = $parser->parse();
+            $importCharset = '';
+            $removedSelectors = $this->removeUnusedRules($cssDocument, $selectors, $importCharset);
             return [
-                'css' => $cd->render(),
-                'removed_selectors' => $rs,
-                'import_charset' => $ic
+                'css' => $cssDocument->render(),
+                'removed_selectors' => $removedSelectors,
+                'import_charset' => $importCharset
             ];
         } catch (Exception $e) {
-            throw new RuntimeException("Ошибка парсинга CSS в файле {$fp}: " . $e->getMessage());
+            throw new RuntimeException("Ошибка парсинга CSS в файле {$filePath}: " . $e->getMessage());
         }
     }
 
-    private function removeUnusedRules($cc, array $ss, string &$ic): int
+    private function removeUnusedRules($cssDocument, array $selectors, string &$importCharset): int
     {
-        $c = $cc->getContents();
-        $tr = [];
-        $rc = 0;
-        foreach ($c as $r) {
-            if ($r instanceof DeclarationBlock) {
-                $result = $this->processDeclarationBlock($r, $ss);
+        $contents = $cssDocument->getContents();
+        $toRemove = [];
+        $removedCount = 0;
+        foreach ($contents as $rule) {
+            if ($rule instanceof DeclarationBlock) {
+                $result = $this->processDeclarationBlock($rule, $selectors);
                 if ($result['remove']) {
-                    $tr[] = $r;
-                    $rc += $result['count'];
+                    $toRemove[] = $rule;
+                    $removedCount += $result['count'];
                 } elseif ($result['modified']) {
-                    $rc += $result['count'];
+                    $removedCount += $result['count'];
                 }
-            } elseif ($r instanceof AtRuleBlock) {
-                $rt = strtolower($r->atRuleName());
-                if (in_array($rt, ['charset', 'import'])) {
-                    $ic .= $r->render() . "\n";
-                    $tr[] = $r;
+            } elseif ($rule instanceof AtRuleBlock) {
+                $atRuleType = strtolower($rule->atRuleName());
+                if (in_array($atRuleType, ['charset', 'import'])) {
+                    $importCharset .= $rule->render() . "\n";
+                    $toRemove[] = $rule;
                     continue;
                 }
-                if ($this->shouldPreserveAtRule($rt)) {
+                if ($this->shouldPreserveAtRule($atRuleType)) {
                     continue;
                 }
-                if (in_array($rt, ['supports', 'media', 'document', 'layer', 'container'])) {
-                    $rc += $this->removeUnusedRules($r, $ss, $ic);
-                    if (empty($r->getContents())) {
-                        $tr[] = $r;
+                if (in_array($atRuleType, ['supports', 'media', 'document', 'layer', 'container'])) {
+                    $removedCount += $this->removeUnusedRules($rule, $selectors, $importCharset);
+                    if (empty($rule->getContents())) {
+                        $toRemove[] = $rule;
                     }
-                } elseif (!$this->isAtRuleAllowed($rt)) {
-                    $tr[] = $r;
+                } elseif (!$this->isAtRuleAllowed($atRuleType)) {
+                    $toRemove[] = $rule;
                 }
             }
         }
-        foreach ($tr as $r) {
-            $cc->remove($r);
+        foreach ($toRemove as $rule) {
+            $cssDocument->remove($rule);
         }
-        return $rc;
+        return $removedCount;
     }
 
-    private function shouldPreserveAtRule(string $rt): bool
+    private function shouldPreserveAtRule(string $atRuleType): bool
     {
-        $preserve_map = [
+        $preserveMap = [
             'keyframes' => 'keyframes',
             'font-face' => 'font_face',
             'page' => 'page',
             'counter-style' => 'counter_style',
             'layer' => 'layer'
         ];
-        return isset($preserve_map[$rt]) && $this->cfg[$preserve_map[$rt]];
+        return isset($preserveMap[$atRuleType]) && $this->settings[$preserveMap[$atRuleType]];
     }
 
-    private function isAtRuleAllowed(string $rt): bool
+    private function isAtRuleAllowed(string $atRuleType): bool
     {
-        $allow_map = [
+        $allowedMap = [
             'media' => 'media',
             'supports' => 'supports'
         ];
-        return isset($allow_map[$rt]) && $this->cfg[$allow_map[$rt]];
+        return isset($allowedMap[$atRuleType]) && $this->settings[$allowedMap[$atRuleType]];
     }
 
-    private function processDeclarationBlock(DeclarationBlock $r, array $ss): array
+    private function processDeclarationBlock(DeclarationBlock $block, array $selectors): array
     {
-        $so = $r->getSelectors();
-        $us = [];
-        $rs = 0;
-        foreach ($so as $soj) {
-            $s = trim((string)$soj);
-            if ($this->isSelectorSafeToRemove($s) && (!isset($ss[$s]) || $ss[$s] === 'unused')) {
-                $rs++;
+        $selectorObjects = $block->getSelectors();
+        $usedSelectors = [];
+        $removedCount = 0;
+        foreach ($selectorObjects as $selectorObj) {
+            $selector = trim((string)$selectorObj);
+            if ($this->isSelectorSafeToRemove($selector) && (!isset($selectors[$selector]) || $selectors[$selector] === 'unused')) {
+                $removedCount++;
                 continue;
             }
-            $us[] = $soj;
+            $usedSelectors[] = $selectorObj;
         }
-        if (empty($us)) {
-            return ['remove' => true, 'count' => count($so), 'modified' => false];
+        if (empty($usedSelectors)) {
+            return ['remove' => true, 'count' => count($selectorObjects), 'modified' => false];
         }
-        if (count($us) < count($so)) {
-            $r->setSelectors($us);
-            return ['remove' => false, 'count' => $rs, 'modified' => true];
+        if (count($usedSelectors) < count($selectorObjects)) {
+            $block->setSelectors($usedSelectors);
+            return ['remove' => false, 'count' => $removedCount, 'modified' => true];
         }
         return ['remove' => false, 'count' => 0, 'modified' => false];
     }
 
-    private function isSelectorSafeToRemove(string $s): bool
+    private function isSelectorSafeToRemove(string $selector): bool
     {
-        if (empty($s)) return false;
-        $t = trim($s);
-        if (in_array(strtolower($t), $this->cs, true)) {
+        if (empty($selector)) return false;
+        $trimmed = trim($selector);
+        if (in_array(strtolower($trimmed), $this->criticalSelectors, true)) {
             return false;
         }
-        foreach ($this->cp as $p) {
-            if (preg_match($p, $t)) {
+        foreach ($this->criticalPatterns as $pattern) {
+            if (preg_match($pattern, $trimmed)) {
                 return false;
             }
         }
         return true;
     }
 
-    private function ensureDirectoryExists(string $d): void
+    private function ensureDirectoryExists(string $dir): void
     {
-        if (!file_exists($d)) {
-            if (!mkdir($d, 0755, true)) {
-                throw new RuntimeException("Не удалось создать каталог: {$d}");
+        if (!file_exists($dir)) {
+            if (!mkdir($dir, 0755, true)) {
+                throw new RuntimeException("Не удалось создать каталог: {$dir}");
             }
         }
     }
 
-    private function minifyCss(string $c): string
+    private function minifyCss(string $css): string
     {
-        $c = preg_replace('!/\*[^*]*\*+([^/][^*]*\*+)*/!', '', $c);
-        $c = preg_replace('/\s+/', ' ', $c);
-        $c = preg_replace('/\s*([{}:;,>+~])\s*/', '$1', $c);
-        $c = preg_replace('/;+}/', '}', $c);
-        $c = preg_replace('/;\s*;+/',';',$c);
-        return trim($c);
+        $css = preg_replace('!/\*[^*]*\*+([^/][^*]*\*+)*/!', '', $css);
+        $css = preg_replace('/\s+/', ' ', $css);
+        $css = preg_replace('/\s*([{}:;,>+~])\s*/', '$1', $css);
+        $css = preg_replace('/;+}/', '}', $css);
+        $css = preg_replace('/;\s*;+/',';',$css);
+        return trim($css);
     }
 
-    private function sendSuccess(string $m): void
+    private function sendSuccess(string $message): void
     {
         http_response_code(200);
         header('Content-Type: application/json; charset=utf-8');
-        $r = [
+        $response = [
             'success' => true,
-            'message' => $m,
-            'processed_files' => $this->pf,
-            'errors' => $this->e
+            'message' => $message,
+            'processed_files' => $this->processedFiles,
+            'errors' => $this->errors
         ];
-        echo json_encode($r, JSON_UNESCAPED_UNICODE);
+        echo json_encode($response, JSON_UNESCAPED_UNICODE);
     }
 
-    private function sendSuccessWithData(string $m, array $d): void
+    private function sendSuccessWithData(string $message, array $data): void
     {
         http_response_code(200);
         header('Content-Type: application/json; charset=utf-8');
-        $r = [
+        $response = [
             'success' => true,
-            'message' => $m,
-            'data' => $d,
-            'errors' => $this->e
+            'message' => $message,
+            'data' => $data,
+            'errors' => $this->errors
         ];
-        echo json_encode($r, JSON_UNESCAPED_UNICODE);
+        echo json_encode($response, JSON_UNESCAPED_UNICODE);
     }
 
-    private function sendSuccessWithStatistics(string $m): void
+    private function sendSuccessWithStatistics(string $message): void
     {
         http_response_code(200);
         header('Content-Type: application/json; charset=utf-8');
-        $r = [
+        $response = [
             'success' => true,
-            'message' => $m,
-            'processed_files' => $this->pf,
-            'statistics' => $this->st,
-            'errors' => $this->e
+            'message' => $message,
+            'processed_files' => $this->processedFiles,
+            'statistics' => $this->statistics,
+            'errors' => $this->errors
         ];
-        echo json_encode($r, JSON_UNESCAPED_UNICODE);
+        echo json_encode($response, JSON_UNESCAPED_UNICODE);
     }
 
-    private function sendError(int $c, string $m): void
+    private function sendError(int $code, string $message): void
     {
-        http_response_code($c);
+        http_response_code($code);
         header('Content-Type: application/json; charset=utf-8');
-        $r = [
+        $response = [
             'success' => false,
-            'error' => $m,
-            'errors' => $this->e
+            'error' => $message,
+            'errors' => $this->errors
         ];
-        echo json_encode($r, JSON_UNESCAPED_UNICODE);
+        echo json_encode($response, JSON_UNESCAPED_UNICODE);
     }
 
     private function logError(Exception $e): void
     {
-        $lm = sprintf(
+        $logMessage = sprintf(
             "[%s] %s in %s:%d\nStack trace:\n%s\n",
             date('Y-m-d H:i:s'),
             $e->getMessage(),
@@ -665,16 +639,17 @@ class RemoveUnusedCSSProcessor
             $e->getLine(),
             $e->getTraceAsString()
         );
-        error_log($lm, 3, $this->bd . '/error.log');
+        error_log($logMessage, 3, $this->baseDir . '/error.log');
     }
 }
 
+// CORS
 if (isset($_SERVER['HTTP_ORIGIN'])) {
-    $ao = [$_SERVER['HTTP_HOST'] ?? 'localhost'];
-    $o = $_SERVER['HTTP_ORIGIN'];
-    $po = parse_url($o);
-    if (isset($po['host']) && in_array($po['host'], $ao, true)) {
-        header("Access-Control-Allow-Origin: {$o}");
+    $allowedOrigins = [$_SERVER['HTTP_HOST'] ?? 'localhost'];
+    $origin = $_SERVER['HTTP_ORIGIN'];
+    $parsedOrigin = parse_url($origin);
+    if (isset($parsedOrigin['host']) && in_array($parsedOrigin['host'], $allowedOrigins, true)) {
+        header("Access-Control-Allow-Origin: {$origin}");
         header('Access-Control-Allow-Credentials: true');
         header('Access-Control-Allow-Methods: POST, OPTIONS');
         header('Access-Control-Allow-Headers: Content-Type, X-Requested-With, X-Action');
@@ -684,18 +659,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
     exit;
 }
+
 try {
-    $p = new RemoveUnusedCSSProcessor();
-    $p->processRequest();
+    $processor = new RemoveUnusedCSSProcessor();
+    $processor->processRequest();
 } catch (Throwable $e) {
     http_response_code(500);
     header('Content-Type: application/json; charset=utf-8');
-    $r = [
+    $response = [
         'success' => false,
         'error' => 'Critical error occurred',
         'message' => $e->getMessage()
     ];
-    echo json_encode($r, JSON_UNESCAPED_UNICODE);
+    echo json_encode($response, JSON_UNESCAPED_UNICODE);
     error_log(sprintf(
         "[CRITICAL ERROR] %s in %s:%d\n%s\n",
         $e->getMessage(),
