@@ -949,6 +949,8 @@
                 onComplete: null,         // вызывается по завершении всего обхода
                 onError: null,            // вызывается при ошибках во время сканирования
 
+                autoSave: true,           // сохранять автоматически неиспользуемые правила по завершении всего обхода
+
                 ...options                // переопределение значений из переданного объекта
             };
 
@@ -1711,6 +1713,26 @@
         },
         onComplete: (results) => {
             console.log('🎉 Обход завершен!', results);
+
+            if (detector.observer && typeof detector.observer.disconnect === 'function') {
+                detector.observer.disconnect();
+                console.log('🛑 MutationObserver отключен');
+            }
+
+            if (detector.options.autoSave) {
+                const selectorsByFile = SelectorManager.groupSelectorsByFile();
+                if (Object.keys(selectorsByFile).length === 0) {
+                    console.log('Нет найденных селекторов для сохранения');
+                    return;
+                }
+                try {
+                    UIManager.saveDataToServer(selectorsByFile);
+                    console.log('✅ Правила сохранены автоматически');
+                } catch (e) {
+                    console.error('Ошибка автоматического сохранения:', e);
+                }
+            }
+
         },
         onError: (error) => {
             console.warn('⚠️ Ошибка:', error);
@@ -1719,4 +1741,3 @@
 
     startApp();
 })();
-
