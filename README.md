@@ -559,7 +559,7 @@ const SETTINGS_ID = 'unused-css-settings'
 
 ```php
 // Ограничение на размер CSS-файла, который будет парситься (в байтах)
-private const MAX_FILE_SIZE = 10 * 1024 * 1024; // 100 MB
+private const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100 MB
 
 // Где хранятся данные по селекторам между сессиями
 private const SELECTORS_FILE  = 'data/unused_selectors.json';
@@ -584,7 +584,7 @@ private const JSON_DECODE_DEPTH = 512;
 
 **Пояснения:**
 
-* **MAX_FILE_SIZE** — защищает от попыток обработать слишком большие файлы (>10 МБ).
+* **MAX_FILE_SIZE** — защищает от попыток обработать слишком большие файлы (>100 МБ).
 * **SELECTORS_FILE** — master-JSON с текущим статусом каждого селектора (`used`/`unused`).
 * **SELECTORS_FILE** и **COMBINED_FILE** — куда пишутся индивидуальные и объединённые minified CSS.
 * **BACKUP_DIR** — резервные копии всех исходников перед очисткой, с timestamp-папками.
