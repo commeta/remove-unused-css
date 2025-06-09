@@ -525,8 +525,10 @@
                 { text: 'Сохранить данные', action: 'save', icon: '💾' },
                 { text: 'Генерировать файлы', action: 'generate', icon: '⚙️' },
                 { text: 'Показать отчет', action: 'report', icon: '📊' },
-                { text: 'Настройки', action: 'settings', icon: '⚙️' }
+                { text: 'Настройки', action: 'settings', icon: '⚙️' },
+                { text: 'Детектор', action: 'detector', icon: '🔍' }
             ];
+
             menuItems.forEach((item, index) => {
                 const menuItem = document.createElement('div');
                 menuItem.style.cssText = `
@@ -603,10 +605,30 @@
 
         static async handleMenuClick(action) {
             if (state.isProcessing) return;
+
+            // Настройки
             if (action === 'settings') {
                 SettingsManager.showSettings();
                 return;
             }
+
+            // Запуск динамического детектора
+            if (action === 'detector') {
+                try {
+                    if (typeof detector === 'undefined') {
+                        console.warn('DynamicContentDetector не инициализирован');
+                        this.showNotification('Детектор не найден', 'error');
+                    } else {
+                        detector.start();
+                        this.showNotification('Детектор запущен', 'info');
+                    }
+                } catch (e) {
+                    console.error('Ошибка запуска детектора:', e);
+                    this.showNotification('Не удалось запустить детектор', 'error');
+                }
+                return;
+            }
+
             const button = document.getElementById(CONFIG.BUTTON_ID);
             if (!button) return;
 
@@ -643,6 +665,7 @@
                 }
             }
         }
+
 
         static showDetailedReport(data) {
             let totalSelectors = 0;
@@ -885,5 +908,818 @@
         }
     }
 
+
+
+
+
+    /**
+     * Dynamic Content Detector
+     * Автоматический обход всех интерактивных элементов на странице
+     * для максимального выявления используемых CSS селекторов
+     */
+
+    class DynamicContentDetector {
+        constructor(options = {}) {
+            this.options = {
+                // Задержки между действиями (мс)
+                mouseDelay: 150,
+                clickDelay: 300,
+                inputDelay: 200,
+                scrollDelay: 500,
+                observerDelay: 1000,
+
+                // Глубина вложенности для поиска элементов
+                maxDepth: 10,
+
+                // Максимальное время ожидания динамического контента
+                maxWaitTime: 5000,
+
+                // Включить/отключить типы взаимодействий
+                enableHover: true,
+                enableClick: false,
+                enableFocus: true,
+                enableScroll: true,
+                enableResize: true,
+                enableKeyboard: true,
+                disableNavigation: true,
+
+                // Дополнительные настройки
+                simulateDeviceResize: true,
+                triggerCustomEvents: true,
+                checkInvisibleElements: true,
+
+                // Колбэки для отслеживания прогресса
+                onProgress: null,
+                onComplete: null,
+                onError: null,
+
+                ...options
+            };
+
+            this.state = {
+                isRunning: false,
+                processedElements: new Set(),
+                discoveredElements: new Set(),
+                initialElementsCount: 0,
+                currentStep: '',
+                progress: 0,
+                errors: []
+            };
+
+            this.selectors = {
+                // Интерактивные элементы
+                interactive: [
+                    'button', 'input', 'textarea', 'select', 'a',
+                    '[onclick]', '[onmouseover]', '[onmouseenter]', '[onmouseleave]',
+                    '[onfocus]', '[onblur]', '[onchange]', '[onsubmit]',
+                    '[tabindex]', '[role="button"]', '[role="tab"]', '[role="menuitem"]'
+                ],
+
+                // Элементы с состояниями
+                stateful: [
+                    '.active', '.selected', '.expanded', '.collapsed', '.open', '.closed',
+                    '.visible', '.hidden', '.show', '.hide', '.current', '.disabled'
+                ],
+
+                // Популярные UI компоненты
+                components: [
+                    '.modal', '.popup', '.dropdown', '.tooltip', '.accordion', '.tab',
+                    '.slider', '.carousel', '.gallery', '.menu', '.navbar', '.sidebar',
+                    '.overlay', '.dialog', '.panel', '.card', '.widget', '.component'
+                ],
+
+                // Hover элементы
+                hoverable: [
+                    'a', 'button', '.btn', '.link', '.hover', '[title]',
+                    '.menu-item', '.nav-item', '.card', '.thumbnail', 'img'
+                ],
+
+                // Форм элементы
+                forms: [
+                    'input[type="text"]', 'input[type="email"]', 'input[type="password"]',
+                    'input[type="number"]', 'input[type="tel"]', 'input[type="url"]',
+                    'input[type="search"]', 'input[type="checkbox"]', 'input[type="radio"]',
+                    'textarea', 'select', 'form'
+                ],
+
+                // Медиа элементы
+                media: [
+                    'video', 'audio', 'iframe', 'object', 'embed',
+                    '.video-player', '.audio-player', '.media-container'
+                ]
+            };
+
+            this.observer = null;
+            this.progressCallback = null;
+        }
+
+        /**
+         * Главный метод запуска автоматического обхода
+         */
+        async start() {
+            if (this.state.isRunning) {
+                console.warn('DynamicContentDetector уже запущен');
+                return;
+            }
+
+            console.log('🚀 Запуск автоматического обхода элементов...');
+            this.state.isRunning = true;
+            this.state.initialElementsCount = document.querySelectorAll('*').length;
+
+            try {
+                await this.setupObserver();
+                await this.performFullScan();
+
+                this.state.isRunning = false;
+                this.log('✅ Автоматический обход завершен успешно', 'success');
+
+                if (this.options.onComplete) {
+                    this.options.onComplete(this.getResults());
+                }
+
+            } catch (error) {
+                this.state.isRunning = false;
+                this.handleError('Критическая ошибка при обходе', error);
+            }
+        }
+
+        /**
+         * Полный скан всех элементов на странице
+         */
+        async performFullScan() {
+            const steps = [
+                { name: 'Подготовка к сканированию', method: 'prepareScanning' },
+                { name: 'Симуляция изменения размеров экрана', method: 'simulateDeviceResize' },
+                { name: 'Активация hover эффектов', method: 'triggerHoverEffects' },
+                { name: 'Взаимодействие с кликабельными элементами', method: 'interactWithClickables' },
+                { name: 'Работа с формами', method: 'interactWithForms' },
+                { name: 'Прокрутка и ленивая загрузка', method: 'performScrolling' },
+                { name: 'Симуляция клавиатурной навигации', method: 'simulateKeyboardNavigation' },
+                { name: 'Активация медиа элементов', method: 'activateMediaElements' },
+                { name: 'Поиск скрытых элементов', method: 'revealHiddenElements' },
+                { name: 'Триггер кастомных событий', method: 'triggerCustomEvents' },
+                { name: 'Финальная проверка', method: 'finalCheck' }
+            ];
+
+            for (let i = 0; i < steps.length; i++) {
+                const step = steps[i];
+                this.updateProgress(step.name, (i / steps.length) * 100);
+
+                try {
+                    await this[step.method]();
+                    await this.delay(this.options.observerDelay);
+                } catch (error) {
+                    this.handleError(`Ошибка на этапе "${step.name}"`, error);
+                }
+            }
+        }
+
+        /**
+         * Подготовка к сканированию
+         */
+        async prepareScanning() {
+            // Убираем все активные состояния
+            document.querySelectorAll('.active, .selected, .current, .focus').forEach(el => {
+                el.classList.remove('active', 'selected', 'current', 'focus');
+            });
+
+            // Сбрасываем все формы
+            document.querySelectorAll('form').forEach(form => {
+                try { form.reset(); } catch (e) { }
+            });
+
+            await this.delay(this.options.mouseDelay);
+        }
+
+        /**
+         * Симуляция изменения размеров экрана
+         */
+        async simulateDeviceResize() {
+            if (!this.options.simulateDeviceResize) return;
+
+            const sizes = [
+                { width: 320, height: 568, name: 'Mobile Portrait' },
+                { width: 768, height: 1024, name: 'Tablet Portrait' },
+                { width: 1024, height: 768, name: 'Tablet Landscape' },
+                { width: 1920, height: 1080, name: 'Desktop HD' }
+            ];
+
+            for (const size of sizes) {
+                this.log(`📱 Симуляция ${size.name} (${size.width}x${size.height})`);
+
+                // Триггерим события изменения размера
+                window.dispatchEvent(new Event('resize'));
+                document.documentElement.style.width = size.width + 'px';
+
+                // Ждем применения медиа-запросов
+                await this.delay(this.options.scrollDelay);
+
+                // Проверяем появление новых элементов
+                await this.checkForNewElements();
+            }
+
+            // Возвращаем исходный размер
+            document.documentElement.style.width = '';
+            window.dispatchEvent(new Event('resize'));
+        }
+
+        /**
+         * Активация hover эффектов
+         */
+        async triggerHoverEffects() {
+            if (!this.options.enableHover) return;
+
+            const hoverElements = this.getAllElements(this.selectors.hoverable);
+            this.log(`🖱️ Обработка ${hoverElements.length} hover элементов`);
+
+            for (const element of hoverElements) {
+                if (!this.isElementInteractable(element)) continue;
+
+                try {
+                    // Наводим курсор
+                    this.dispatchMouseEvent(element, 'mouseenter');
+                    this.dispatchMouseEvent(element, 'mouseover');
+
+                    await this.delay(this.options.mouseDelay);
+
+                    // Убираем курсор
+                    this.dispatchMouseEvent(element, 'mouseleave');
+                    this.dispatchMouseEvent(element, 'mouseout');
+
+                    this.state.processedElements.add(element);
+
+                } catch (error) {
+                    this.handleError(`Ошибка hover для элемента`, error, element);
+                }
+            }
+        }
+
+        /**
+         * Взаимодействие с кликабельными элементами
+         */
+        async interactWithClickables() {
+            if (!this.options.enableClick) return;
+
+            const clickableElements = this.getAllElements(this.selectors.interactive);
+            this.log(`👆 Обработка ${clickableElements.length} кликабельных элементов`);
+
+            // Сортируем по приоритету (сначала кнопки, потом ссылки)
+            clickableElements.sort((a, b) => {
+                const priorityA = this.getClickPriority(a);
+                const priorityB = this.getClickPriority(b);
+                return priorityB - priorityA;
+            });
+
+            for (const element of clickableElements) {
+                if (!this.isElementInteractable(element)) continue;
+                if (this.isDestructiveElement(element)) continue;
+
+                try {
+                    const initialHTML = document.body.innerHTML.length;
+
+                    // Различные типы кликов
+                    await this.performClick(element);
+
+                    // Проверяем, изменилась ли страница
+                    await this.delay(this.options.clickDelay);
+                    const newHTML = document.body.innerHTML.length;
+
+                    if (Math.abs(newHTML - initialHTML) > 100) {
+                        this.log(`📄 Обнаружены изменения DOM после клика`, 'info');
+                        await this.checkForNewElements();
+                    }
+
+                    this.state.processedElements.add(element);
+
+                } catch (error) {
+                    this.handleError(`Ошибка клика по элементу`, error, element);
+                }
+            }
+        }
+
+        /**
+         * Выполнение клика с различными модификаторами
+         */
+        async performClick(element) {
+            const tagName = element.tagName.toLowerCase();
+            const isLink = (tagName === 'a' && element.href);
+
+            if (isLink && this.options.disableNavigation) {
+                this.dispatchMouseEvent(element, 'mousedown');
+                this.dispatchMouseEvent(element, 'click');
+                this.dispatchMouseEvent(element, 'mouseup');
+                await this.delay(this.options.clickDelay);
+                return;
+            }
+
+            if (tagName === 'select') {
+                element.focus();
+                element.click();
+
+                const options = element.querySelectorAll('option');
+                for (let i = 0; i < Math.min(options.length, 3); i++) {
+                    const opt = options[i];
+                    if (opt && !opt.disabled) {
+                        element.value = opt.value;
+                        element.dispatchEvent(new Event('change', { bubbles: true }));
+                        await this.delay(this.options.inputDelay);
+                    }
+                }
+            } else if (element.type === 'checkbox' || element.type === 'radio') {
+                element.click();
+                await this.delay(this.options.inputDelay);
+                element.click();
+            } else {
+                element.click();
+
+                if (element.classList.contains('dblclick') || element.hasAttribute('ondblclick')) {
+                    await this.delay(100);
+                    this.dispatchMouseEvent(element, 'dblclick');
+                }
+            }
+        }
+
+
+        /**
+         * Работа с формами
+         */
+        async interactWithForms() {
+            if (!this.options.enableFocus) return;
+
+            const formElements = this.getAllElements(this.selectors.forms);
+            this.log(`📝 Обработка ${formElements.length} элементов форм`);
+
+            for (const element of formElements) {
+                if (!this.isElementInteractable(element)) continue;
+
+                try {
+                    await this.interactWithFormElement(element);
+                    this.state.processedElements.add(element);
+                } catch (error) {
+                    this.handleError(`Ошибка взаимодействия с формой`, error, element);
+                }
+            }
+        }
+
+        /**
+         * Взаимодействие с конкретным элементом формы
+         */
+        async interactWithFormElement(element) {
+            const tagName = element.tagName.toLowerCase();
+            const type = element.type?.toLowerCase();
+
+            // Фокус
+            element.focus();
+            await this.delay(this.options.inputDelay);
+
+            switch (tagName) {
+                case 'input':
+                    await this.handleInputElement(element, type);
+                    break;
+                case 'textarea':
+                    element.value = 'Test content';
+                    element.dispatchEvent(new Event('input', { bubbles: true }));
+                    break;
+                case 'select':
+                    // Уже обработано в performClick
+                    break;
+            }
+
+            // Потеря фокуса
+            element.blur();
+            await this.delay(this.options.inputDelay);
+        }
+
+        /**
+         * Обработка input элементов
+         */
+        async handleInputElement(element, type) {
+            const testValues = {
+                'text': 'Test text',
+                'email': 'test@example.com',
+                'password': 'password123',
+                'number': '123',
+                'tel': '+1234567890',
+                'url': 'https://example.com',
+                'search': 'search query',
+                'date': '2024-01-01',
+                'time': '12:00',
+                'color': '#ff0000'
+            };
+
+            if (testValues[type]) {
+                element.value = testValues[type];
+                element.dispatchEvent(new Event('input', { bubbles: true }));
+                element.dispatchEvent(new Event('change', { bubbles: true }));
+            } else if (type === 'checkbox' || type === 'radio') {
+                // Уже обработано в performClick
+            } else if (type === 'range') {
+                const min = parseInt(element.min) || 0;
+                const max = parseInt(element.max) || 100;
+                element.value = Math.floor((min + max) / 2);
+                element.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+        }
+
+        /**
+         * Прокрутка страницы и активация ленивой загрузки
+         */
+        async performScrolling() {
+            if (!this.options.enableScroll) return;
+
+            this.log('📜 Выполнение прокрутки страницы');
+
+            const scrollPositions = [
+                0,
+                window.innerHeight,
+                window.innerHeight * 2,
+                window.innerHeight * 3,
+                document.body.scrollHeight
+            ];
+
+            for (const position of scrollPositions) {
+                window.scrollTo({ top: position, behavior: 'smooth' });
+                await this.delay(this.options.scrollDelay);
+
+                // Проверяем появление новых элементов после прокрутки
+                await this.checkForNewElements();
+            }
+
+            // Горизонтальная прокрутка, если есть
+            if (document.body.scrollWidth > window.innerWidth) {
+                const horizontalPositions = [0, window.innerWidth, document.body.scrollWidth];
+                for (const position of horizontalPositions) {
+                    window.scrollTo({ left: position, behavior: 'smooth' });
+                    await this.delay(this.options.scrollDelay);
+                }
+            }
+
+            // Возвращаемся наверх
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            await this.delay(this.options.scrollDelay);
+        }
+
+        /**
+         * Симуляция клавиатурной навигации
+         */
+        async simulateKeyboardNavigation() {
+            if (!this.options.enableKeyboard) return;
+
+            this.log('⌨️ Симуляция клавиатурной навигации');
+
+            const keys = [
+                'Tab', 'Enter', 'Escape', 'ArrowUp', 'ArrowDown',
+                'ArrowLeft', 'ArrowRight', 'Space'
+            ];
+
+            // Находим первый фокусируемый элемент
+            const focusable = document.querySelector(
+                'input, button, select, textarea, a[href], [tabindex]:not([tabindex="-1"])'
+            );
+
+            if (focusable) {
+                focusable.focus();
+
+                for (const key of keys) {
+                    try {
+                        document.dispatchEvent(new KeyboardEvent('keydown', {
+                            key: key,
+                            code: key,
+                            bubbles: true
+                        }));
+
+                        await this.delay(this.options.inputDelay);
+
+                        document.dispatchEvent(new KeyboardEvent('keyup', {
+                            key: key,
+                            code: key,
+                            bubbles: true
+                        }));
+
+                    } catch (error) {
+                        this.handleError(`Ошибка клавиатурного события ${key}`, error);
+                    }
+                }
+            }
+        }
+
+        /**
+         * Активация медиа элементов
+         */
+        async activateMediaElements() {
+            const mediaElements = this.getAllElements(this.selectors.media);
+            this.log(`🎬 Обработка ${mediaElements.length} медиа элементов`);
+
+            for (const element of mediaElements) {
+                try {
+                    const tagName = element.tagName.toLowerCase();
+
+                    if (tagName === 'video' || tagName === 'audio') {
+                        // Попытка воспроизведения
+                        if (element.play && typeof element.play === 'function') {
+                            const playPromise = element.play();
+                            if (playPromise) {
+                                playPromise.catch(() => { }); // Игнорируем ошибки автовоспроизведения
+                            }
+
+                            await this.delay(this.options.inputDelay);
+
+                            if (element.pause && typeof element.pause === 'function') {
+                                element.pause();
+                            }
+                        }
+                    } else if (tagName === 'iframe') {
+                        // Для iframe просто отмечаем как обработанный
+                        this.state.processedElements.add(element);
+                    }
+
+                } catch (error) {
+                    this.handleError(`Ошибка активации медиа элемента`, error, element);
+                }
+            }
+        }
+
+        /**
+         * Поиск и активация скрытых элементов
+         */
+        async revealHiddenElements() {
+            this.log('🔍 Поиск скрытых элементов');
+
+            // Элементы с display: none или visibility: hidden
+            const hiddenElements = Array.from(document.querySelectorAll('*')).filter(el => {
+                const style = window.getComputedStyle(el);
+                return style.display === 'none' || style.visibility === 'hidden';
+            });
+
+            for (const element of hiddenElements.slice(0, 50)) { // Ограничиваем количество
+                try {
+                    // Временно показываем элемент
+                    const originalDisplay = element.style.display;
+                    const originalVisibility = element.style.visibility;
+
+                    element.style.display = 'block';
+                    element.style.visibility = 'visible';
+
+                    await this.delay(this.options.mouseDelay);
+
+                    // Возвращаем исходное состояние
+                    element.style.display = originalDisplay;
+                    element.style.visibility = originalVisibility;
+
+                    this.state.discoveredElements.add(element);
+
+                } catch (error) {
+                    this.handleError(`Ошибка показа скрытого элемента`, error, element);
+                }
+            }
+        }
+
+        /**
+         * Триггер кастомных событий
+         */
+        async triggerCustomEvents() {
+            if (!this.options.triggerCustomEvents) return;
+
+            this.log('⚡ Триггер кастомных событий');
+
+            const customEvents = [
+                'load', 'DOMContentLoaded', 'scroll', 'resize', 'orientationchange',
+                'focus', 'blur', 'mouseenter', 'mouseleave', 'touchstart', 'touchend'
+            ];
+
+            for (const eventName of customEvents) {
+                try {
+                    const event = new Event(eventName, { bubbles: true, cancelable: true });
+                    document.dispatchEvent(event);
+                    window.dispatchEvent(event);
+
+                    await this.delay(this.options.mouseDelay);
+
+                } catch (error) {
+                    this.handleError(`Ошибка кастомного события ${eventName}`, error);
+                }
+            }
+        }
+
+        /**
+         * Финальная проверка и подсчет результатов
+         */
+        async finalCheck() {
+            this.log('🏁 Финальная проверка');
+
+            // Последняя проверка на новые элементы
+            await this.checkForNewElements();
+
+            // Подсчет статистики
+            const finalElementsCount = document.querySelectorAll('*').length;
+            const discoveredCount = finalElementsCount - this.state.initialElementsCount;
+
+            if (discoveredCount > 0) {
+                this.log(`📊 Обнаружено ${discoveredCount} новых элементов в DOM`, 'success');
+            }
+
+            this.log(`📈 Обработано элементов: ${this.state.processedElements.size}`, 'info');
+            this.log(`🔍 Обнаружено скрытых: ${this.state.discoveredElements.size}`, 'info');
+        }
+
+        /**
+         * Утилиты и вспомогательные методы
+         */
+
+        getAllElements(selectors) {
+            const elements = new Set();
+
+            for (const selector of selectors) {
+                try {
+                    document.querySelectorAll(selector).forEach(el => elements.add(el));
+                } catch (error) {
+                    // Игнорируем ошибки селекторов
+                }
+            }
+
+            return Array.from(elements);
+        }
+
+        isElementInteractable(element) {
+            if (!element || !element.offsetParent) return false;
+
+            const style = window.getComputedStyle(element);
+            if (style.display === 'none' || style.visibility === 'hidden') return false;
+            if (style.pointerEvents === 'none') return false;
+
+            const rect = element.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
+        }
+
+        isDestructiveElement(element) {
+            const destructiveSelectors = [
+                '[type="submit"]', 'input[type="submit"]', 'button[type="submit"]',
+                '.delete', '.remove', '.destroy', '.logout', '.signout',
+                'a[href*="delete"]', 'a[href*="remove"]', 'a[href*="logout"]'
+            ];
+
+            return destructiveSelectors.some(selector => {
+                try {
+                    return element.matches(selector);
+                } catch {
+                    return false;
+                }
+            });
+        }
+
+        getClickPriority(element) {
+            const tagName = element.tagName.toLowerCase();
+            const classList = Array.from(element.classList);
+
+            // Приоритеты для разных типов элементов
+            if (tagName === 'button') return 100;
+            if (classList.includes('btn')) return 90;
+            if (element.hasAttribute('onclick')) return 80;
+            if (tagName === 'a') return 70;
+            if (element.hasAttribute('tabindex')) return 60;
+
+            return 50;
+        }
+
+        dispatchMouseEvent(element, eventType) {
+            const event = new MouseEvent(eventType, {
+                view: window,
+                bubbles: true,
+                cancelable: true
+            });
+            element.dispatchEvent(event);
+        }
+
+        async checkForNewElements() {
+            // Даем время на рендеринг
+            await this.delay(this.options.observerDelay);
+
+            const currentCount = document.querySelectorAll('*').length;
+            if (currentCount > this.state.initialElementsCount) {
+                this.log(`📢 Обнаружены новые элементы DOM (+${currentCount - this.state.initialElementsCount})`, 'info');
+            }
+        }
+
+        async setupObserver() {
+            if (this.observer) {
+                this.observer.disconnect();
+            }
+
+            this.observer = new MutationObserver((mutations) => {
+                let hasChanges = false;
+
+                mutations.forEach(mutation => {
+                    if (mutation.type === 'childList' &&
+                        (mutation.addedNodes.length > 0 || mutation.removedNodes.length > 0)) {
+                        hasChanges = true;
+                    }
+                });
+
+                if (hasChanges) {
+                    this.log('🔄 Обнаружены изменения DOM', 'debug');
+                }
+            });
+
+            this.observer.observe(document.body, {
+                childList: true,
+                subtree: true,
+                attributes: true,
+                attributeFilter: ['class', 'style', 'hidden']
+            });
+        }
+
+        updateProgress(step, percent) {
+            this.state.currentStep = step;
+            this.state.progress = Math.round(percent);
+
+            if (this.options.onProgress) {
+                this.options.onProgress(this.state.progress, step);
+            }
+
+            this.log(`📊 ${step} (${this.state.progress}%)`);
+        }
+
+        handleError(message, error, element = null) {
+            const errorInfo = {
+                message,
+                error: error.message,
+                element: element ? this.getElementInfo(element) : null,
+                timestamp: new Date().toISOString()
+            };
+
+            this.state.errors.push(errorInfo);
+            this.log(`❌ ${message}: ${error.message}`, 'error');
+
+            if (this.options.onError) {
+                this.options.onError(errorInfo);
+            }
+        }
+
+        getElementInfo(element) {
+            return {
+                tagName: element.tagName,
+                id: element.id,
+                className: element.className,
+                textContent: element.textContent?.slice(0, 50)
+            };
+        }
+
+        delay(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        log(message, type = 'info') {
+            const prefix = {
+                info: 'ℹ️',
+                success: '✅',
+                error: '❌',
+                debug: '🐛'
+            }[type] || 'ℹ️';
+
+            console.log(`${prefix} [DynamicContentDetector] ${message}`);
+        }
+
+        getResults() {
+            return {
+                processedElements: this.state.processedElements.size,
+                discoveredElements: this.state.discoveredElements.size,
+                errors: this.state.errors,
+                finalElementCount: document.querySelectorAll('*').length,
+                newElementsFound: document.querySelectorAll('*').length - this.state.initialElementsCount
+            };
+        }
+
+        /**
+         * Остановка процесса
+         */
+        stop() {
+            this.state.isRunning = false;
+            if (this.observer) {
+                this.observer.disconnect();
+            }
+            this.log('⏹️ Процесс остановлен пользователем');
+        }
+    }
+
+    // Экспорт для использования
+    if (typeof module !== 'undefined' && module.exports) {
+        module.exports = DynamicContentDetector;
+    } else {
+        window.DynamicContentDetector = DynamicContentDetector;
+    }
+
+    const detector = new DynamicContentDetector({
+        onProgress: (percent, step) => {
+            console.log(`Прогресс: ${percent}% - ${step}`);
+        },
+        onComplete: (results) => {
+            console.log('🎉 Обход завершен!', results);
+        },
+        onError: (error) => {
+            console.warn('⚠️ Ошибка:', error);
+        }
+    });
+
     startApp();
 })();
+
