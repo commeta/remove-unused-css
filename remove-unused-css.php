@@ -25,13 +25,14 @@ use Sabberworm\CSS\Renderable;
 class RemoveUnusedCSSProcessor
 {
     // File and directory constants
-    private const SELECTORS_FILE = 'data/unused_selectors.json';
-    private const CSS_DIR = 'css/';
-    private const COMBINED_FILE = 'remove-unused-css.min.css';
-    private const MAX_FILE_SIZE = 10 * 1024 * 1024;
-    private const BACKUP_DIR = 'backup/';
-    private const SETTINGS_FILE = 'data/settings.json';
-    private const VERSION_FILE = 'data/version.json';
+    private const SELECTORS_FILE = 'data/unused_selectors.json'; // Путь к JSON-файлу, где хранятся все найденные неиспользуемые селекторы
+    private const CSS_DIR = 'css/'; // Каталог, в который записываются очищенные (минимизированные) CSS-файлы
+    private const COMBINED_FILE = 'remove-unused-css.min.css'; // Имя объединённого файла со всеми минимизированными стилями
+    private const MAX_FILE_SIZE = 100 * 1024 * 1024; // Максимально допустимый размер обрабатываемого CSS-файла (100 МБ)
+    private const BACKUP_DIR = 'backup/'; // Каталог для бэкапов предыдущих версий очищенных CSS-файлов
+    private const SETTINGS_FILE = 'data/settings.json'; // Путь к JSON-файлу с пользовательскими настройками фильтрации
+    private const MAX_INPUT_SIZE    = 15 * 1024 * 1024; // Максимальный размер JSON-пэйлоада (15 МБ)
+    private const JSON_DECODE_DEPTH = 512; // Максимальная глубина вложенности при декодировании JSON
 
     // Paths and state
     private string $documentRoot;
@@ -40,41 +41,52 @@ class RemoveUnusedCSSProcessor
     private array $processedFiles = [];
     private array $statistics = [];
     private array $settings = [
-        'media' => true,
-        'media_print' => true,
-        'keyframes' => true,
-        'font_face' => true,
-        'import' => true,
-        'supports' => true,
-        'page' => true,
-        'charset' => true,
-        'counter_style' => true,
-        'layer' => true,
-        'pseudo_classes' => true,
-        'pseudo_elements' => true,
-        'attribute_selectors' => true,
-        'css_variables' => true,
-        'vendor_prefixes' => true,
-        'adjacent_selectors' => true,
-        'child_selectors' => true,
-        'general_siblings' => true,
-        'css_functions' => true,
-        'animations' => true,
-        'transforms' => true,
-        'transitions' => true,
-        'percentages' => true,
-        'escapes' => true,
-        'colors' => true,
-        'gradients' => true,
-        'filters' => true,
-        'masks' => true,
-        'nth_selectors' => true,
-        'logical_selectors' => true,
-        'version' => 1
+        'media'               => true,  // сохранять @media правила
+        'media_print'         => true,  // сохранять @media print
+        'keyframes'           => true,  // сохранять @keyframes анимации
+        'font_face'           => true,  // сохранять @font-face шрифты
+        'import'              => true,  // сохранять @import директивы
+        'supports'            => true,  // сохранять @supports правила
+        'page'                => true,  // сохранять @page правила
+        'charset'             => true,  // сохранять @charset директиву
+        'counter_style'       => true,  // сохранять @counter-style правила
+        'layer'               => true,  // сохранять @layer правила
+        'pseudo_classes'      => true,  // сохранять псевдо-классы (:hover, :focus)
+        'pseudo_elements'     => true,  // сохранять псевдо-элементы (::before, ::after)
+        'attribute_selectors' => true,  // сохранять селекторы по атрибутам ([attr=value])
+        'css_variables'       => true,  // сохранять CSS-переменные (--var)
+        'vendor_prefixes'     => true,  // сохранять префиксные свойства (-webkit-, -moz-)
+        'adjacent_selectors'  => true,  // сохранять селекторы соседних элементов (E + F)
+        'child_selectors'     => true,  // сохранять селекторы дочерних элементов (E > F)
+        'general_siblings'    => true,  // сохранять общих соседей (E ~ F)
+        'css_functions'       => true,  // сохранять функции (calc(), url(), rgb() и т.п.)
+        'animations'          => true,  // сохранять свойства animation и transition
+        'transforms'          => true,  // сохранять свойства transform
+        'transitions'         => true,  // сохранять transition правила
+        'percentages'         => true,  // сохранять значения в процентах (50%, 100%)
+        'escapes'             => true,  // сохранять escape-последовательности (\\3020)
+        'colors'              => true,  // сохранять цветовые функции (rgb(), hsl())
+        'gradients'           => true,  // сохранять градиенты (linear-gradient, radial-gradient)
+        'filters'             => true,  // сохранять CSS-фильтры (filter, backdrop-filter)
+        'masks'               => true,  // сохранять маски и clip-path
+        'nth_selectors'       => true,  // сохранять nth-child, nth-of-type
+        'logical_selectors'   => true,  // сохранять логические селекторы (:not, :is, :where)
+        'version'             => 1      // текущая версия конфигурации
     ];
+
     private array $criticalPatterns = [];
     private array $criticalSelectors = [
-        'html', 'body', '*', ':root', 'head', 'title', 'meta', 'link', 'script', 'style', 'base'
+        'html',    // корневой элемент
+        'body',    // основной контейнер документа
+        '*',       // универсальный селектор
+        ':root',   // корень документа для CSS-переменных
+        'head',    // секция метаданных
+        'title',   // заголовок страницы
+        'meta',    // мета-теги
+        'link',    // внешние ресурсы (CSS, favicon)
+        'script',  // скрипты
+        'style',   // встроенные стили
+        'base'     // базовый URL
     ];
 
     public function __construct()
@@ -213,9 +225,20 @@ class RemoveUnusedCSSProcessor
 
     private function getInputData(): ?array
     {
-        $input = file_get_contents('php://input');
+        if (
+            isset($_SERVER['CONTENT_LENGTH']) &&
+            is_numeric($_SERVER['CONTENT_LENGTH']) &&
+            (int)$_SERVER['CONTENT_LENGTH'] > self::MAX_INPUT_SIZE
+        ) {
+            throw new RuntimeException('Payload too large', 413);
+        }
+
+        $input = file_get_contents('php://input', false, null, 0, self::MAX_INPUT_SIZE + 1);
         if (!$input) return null;
-        $data = json_decode($input, true);
+        if (strlen($input) > self::MAX_INPUT_SIZE) {
+            throw new RuntimeException('Payload too large', 413);
+        }
+        $data = json_decode($input, true, self::JSON_DECODE_DEPTH);
         if (json_last_error() !== JSON_ERROR_NONE) return null;
         return is_array($data) ? $data : null;
     }
