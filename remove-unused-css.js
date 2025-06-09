@@ -908,10 +908,6 @@
         }
     }
 
-
-
-
-
     /**
      * Dynamic Content Detector
      * Автоматический обход всех интерактивных элементов на странице
@@ -922,39 +918,40 @@
         constructor(options = {}) {
             this.options = {
                 // Задержки между действиями (мс)
-                mouseDelay: 150,
-                clickDelay: 300,
-                inputDelay: 200,
-                scrollDelay: 500,
-                observerDelay: 1000,
+                mouseDelay: 150,           // пауза после hover-эффекта
+                clickDelay: 300,           // пауза после клика
+                inputDelay: 200,           // пауза после ввода в поля
+                scrollDelay: 500,          // пауза после прокрутки страницы
+                observerDelay: 1000,       // пауза между срабатываниями MutationObserver
 
-                // Глубина вложенности для поиска элементов
-                maxDepth: 10,
+                // Глубина вложенности для поиска новых элементов
+                maxDepth: 10,              // сколько уровней вложенности проверяем
 
                 // Максимальное время ожидания динамического контента
-                maxWaitTime: 5000,
+                maxWaitTime: 5000,         // максимально ждём появления контента
 
                 // Включить/отключить типы взаимодействий
-                enableHover: true,
-                enableClick: false,
-                enableFocus: true,
-                enableScroll: true,
-                enableResize: true,
-                enableKeyboard: true,
-                disableNavigation: true,
+                enableHover: true,         // эмулировать наведение курсора
+                enableClick: false,        // эмулировать клики (false — без кликов)
+                enableFocus: true,         // эмулировать фокус на элементах
+                enableScroll: true,        // эмулировать прокрутку
+                enableResize: true,        // эмулировать изменение размеров окна
+                enableKeyboard: true,      // эмулировать клавиатурные события
+                disableNavigation: true,   // блокировать реальные переходы по ссылкам
 
                 // Дополнительные настройки
-                simulateDeviceResize: true,
-                triggerCustomEvents: true,
-                checkInvisibleElements: true,
+                simulateDeviceResize: true,    // менять viewport для разных устройств
+                triggerCustomEvents: true,     // триггерить события load, scroll, resize и др.
+                checkInvisibleElements: true,  // проверять скрытые элементы (display:none)
 
                 // Колбэки для отслеживания прогресса
-                onProgress: null,
-                onComplete: null,
-                onError: null,
+                onProgress: null,         // вызывается при каждом шаге сканирования
+                onComplete: null,         // вызывается по завершении всего обхода
+                onError: null,            // вызывается при ошибках во время сканирования
 
-                ...options
+                ...options                // переопределение значений из переданного объекта
             };
+
 
             this.state = {
                 isRunning: false,
