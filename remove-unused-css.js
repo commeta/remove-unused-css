@@ -5,12 +5,6 @@
  * Released under the GPL v3 or MIT license
  */
  
-/*!
- * Remove unused CSS 
- * https://github.com/commeta/remove-unused-css
- * Copyright 2025 Commeta
- * Released under the GPL v3 or MIT license
- */
 
 (function () {
     // Config constants
