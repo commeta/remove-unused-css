@@ -482,30 +482,29 @@ const SETTINGS_ID = 'unused-css-settings'
 
 ```php
 // Ограничение на размер CSS-файла, который будет парситься (в байтах)
-private const MFS = 10 * 1024 * 1024; // 10 MB
+private const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
 // Где хранятся данные по селекторам между сессиями
-private const SF  = 'data/unused_selectors.json';
+private const SELECTORS_FILE  = 'data/unused_selectors.json';
 
 // Каталог для сгенерированных «чистых» CSS
-private const CD  = 'css/';
-private const CF  = 'remove-unused-css.min.css'; // имя объединённого файла
+private const SELECTORS_FILE  = 'css/';
+private const COMBINED_FILE  = 'remove-unused-css.min.css'; // имя объединённого файла
 
 // Папка для резервных копий
-private const BD  = 'backup/';
+private const BACKUP_DIR  = 'backup/';
 
 // Файл настроек и версии
-private const SET = 'data/settings.json';
-private const VER = 'data/version.json';
+private const SETTINGS_FILE = 'data/settings.json';
 ```
 
 **Пояснения:**
 
-* **MFS** — защищает от попыток обработать слишком большие файлы (>10 МБ).
-* **SF** — master-JSON с текущим статусом каждого селектора (`used`/`unused`).
-* **CD** и **CF** — куда пишутся индивидуальные и объединённые minified CSS.
-* **BD** — резервные копии всех исходников перед очисткой, с timestamp-папками.
-* **SET**, **VER** — хранят настройки фильтрации и версию схемы, чтобы при изменении опций сбрасывать старые данные.
+* **MAX_FILE_SIZE** — защищает от попыток обработать слишком большие файлы (>10 МБ).
+* **SELECTORS_FILE** — master-JSON с текущим статусом каждого селектора (`used`/`unused`).
+* **SELECTORS_FILE** и **COMBINED_FILE** — куда пишутся индивидуальные и объединённые minified CSS.
+* **BACKUP_DIR** — резервные копии всех исходников перед очисткой, с timestamp-папками.
+* **SETTINGS_FILE** — хранят настройки фильтрации и версию схемы, чтобы при изменении опций сбрасывать старые данные.
 
 ---
 
