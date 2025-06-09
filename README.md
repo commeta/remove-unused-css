@@ -559,7 +559,7 @@ const SETTINGS_ID = 'unused-css-settings'
 
 ```php
 // Ограничение на размер CSS-файла, который будет парситься (в байтах)
-private const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+private const MAX_FILE_SIZE = 10 * 1024 * 1024; // 100 MB
 
 // Где хранятся данные по селекторам между сессиями
 private const SELECTORS_FILE  = 'data/unused_selectors.json';
@@ -573,6 +573,13 @@ private const BACKUP_DIR  = 'backup/';
 
 // Файл настроек и версии
 private const SETTINGS_FILE = 'data/settings.json';
+
+// Максимальный размер JSON-пэйлоада (15 МБ)
+private const MAX_INPUT_SIZE    = 15 * 1024 * 1024; 
+
+// Максимальная глубина вложенности при декодировании JSON
+private const JSON_DECODE_DEPTH = 512; 
+
 ```
 
 **Пояснения:**
@@ -582,6 +589,8 @@ private const SETTINGS_FILE = 'data/settings.json';
 * **SELECTORS_FILE** и **COMBINED_FILE** — куда пишутся индивидуальные и объединённые minified CSS.
 * **BACKUP_DIR** — резервные копии всех исходников перед очисткой, с timestamp-папками.
 * **SETTINGS_FILE** — хранят настройки фильтрации и версию схемы, чтобы при изменении опций сбрасывать старые данные.
+* **MAX_INPUT_SIZE** — ограничивает размер JSON-пэйлоада, читаемого из `php://input`, чтобы предотвратить DoS-атаки через отправку многомегабайтных запросов.
+* **JSON_DECODE_DEPTH** — не даёт парсить сверхглубокие вложенные структуры, которые могут вызвать исчерпание стека или чрезмерную нагрузку на декодер.
 
 ---
 
