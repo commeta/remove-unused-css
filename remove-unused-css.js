@@ -932,7 +932,7 @@
 
                 // Включить/отключить типы взаимодействий
                 enableHover: true,         // эмулировать наведение курсора
-                enableClick: false,        // эмулировать клики (false — без кликов)
+                enableClick: true,        // эмулировать клики (false — без кликов)
                 enableFocus: true,         // эмулировать фокус на элементах
                 enableScroll: true,        // эмулировать прокрутку
                 enableResize: true,        // эмулировать изменение размеров окна
@@ -1010,6 +1010,184 @@
 
             this.observer = null;
             this.progressCallback = null;
+
+            this.originalHandlers = new Map();
+            this.preventedEvents = new Set();
+            this.isNavigationBlocked = false;
+        }
+
+
+        // Метод для блокировки навигации
+        blockNavigation() {
+            if (this.isNavigationBlocked) return;
+
+            this.isNavigationBlocked = true;
+            this.log("🛡️ Блокировка навигации активирована");
+
+            // Блокируем события на document
+            const eventsToBlock = ['beforeunload', 'unload', 'pagehide'];
+            eventsToBlock.forEach(eventType => {
+                const handler = (e) => {
+                    e.preventDefault();
+                    e.stopImmediatePropagation();
+                    return false;
+                };
+                document.addEventListener(eventType, handler, true);
+                this.originalHandlers.set(eventType, handler);
+            });
+
+            // Блокируем отправку форм
+            document.addEventListener('submit', (e) => {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                this.log("🚫 Заблокирована отправка формы");
+                return false;
+            }, true);
+
+            // Перехватываем clicks на ссылках
+            document.addEventListener('click', (e) => {
+                const target = e.target.closest('a');
+                if (target && target.href) {
+                    // Проверяем тип ссылки
+                    const href = target.href.toLowerCase();
+                    const isExternal = href.startsWith('http') && !href.includes(window.location.hostname);
+                    const isJavaScript = href.startsWith('javascript:');
+                    const isAnchor = href.includes('#') && href.split('#')[0] === window.location.href.split('#')[0];
+                    const isMailto = href.startsWith('mailto:');
+                    const isTel = href.startsWith('tel:');
+
+                    // Разрешаем только якоря на текущей странице
+                    if (!isAnchor && !isJavaScript && !isMailto && !isTel) {
+                        e.preventDefault();
+                        e.stopImmediatePropagation();
+                        this.log(`🚫 Заблокирован переход по ссылке: ${target.href}`);
+                        return false;
+                    }
+                }
+            }, true);
+
+            // Блокируем изменение location
+            const originalPushState = history.pushState;
+            const originalReplaceState = history.replaceState;
+
+            history.pushState = function () {
+                console.log("🚫 Заблокирован pushState");
+                return false;
+            };
+
+            history.replaceState = function () {
+                console.log("🚫 Заблокирован replaceState");
+                return false;
+            };
+
+            this.originalHandlers.set('pushState', originalPushState);
+            this.originalHandlers.set('replaceState', originalReplaceState);
+        }
+
+        // Метод для разблокировки навигации
+        unblockNavigation() {
+            if (!this.isNavigationBlocked) return;
+
+            this.log("🔓 Разблокировка навигации");
+
+            // Восстанавливаем оригинальные обработчики
+            this.originalHandlers.forEach((handler, eventType) => {
+                if (eventType === 'pushState') {
+                    history.pushState = handler;
+                } else if (eventType === 'replaceState') {
+                    history.replaceState = handler;
+                } else {
+                    document.removeEventListener(eventType, handler, true);
+                }
+            });
+
+            this.originalHandlers.clear();
+            this.isNavigationBlocked = false;
+        }
+
+        // Безопасный метод эмуляции клика
+        safeClick(element) {
+            if (!element) return false;
+
+            const tagName = element.tagName.toLowerCase();
+            const type = element.type?.toLowerCase();
+
+            try {
+                // Для ссылок - только эмуляция без перехода
+                if (tagName === 'a') {
+                    this.simulateVisualClick(element);
+                    return true;
+                }
+
+                // Для форм - предотвращаем отправку
+                if (tagName === 'form' || type === 'submit') {
+                    this.simulateVisualClick(element);
+                    return true;
+                }
+
+                // Для кнопок - безопасный клик
+                if (tagName === 'button' || type === 'button') {
+                    // Проверяем на деструктивные действия
+                    if (this.isDestructiveElement(element)) {
+                        this.simulateVisualClick(element);
+                        return true;
+                    }
+
+                    // Безопасный клик для обычных кнопок
+                    const clickEvent = new MouseEvent('click', {
+                        bubbles: true,
+                        cancelable: true,
+                        view: window
+                    });
+
+                    element.dispatchEvent(clickEvent);
+                    return true;
+                }
+
+                // Для других элементов
+                this.simulateVisualClick(element);
+                return true;
+
+            } catch (error) {
+                this.handleError('Ошибка безопасного клика', error, element);
+                return false;
+            }
+        }
+
+        // Визуальная симуляция клика без реального выполнения
+        simulateVisualClick(element) {
+            if (!element) return;
+
+            try {
+                // Эмулируем визуальные эффекты клика
+                const originalStyle = {
+                    transform: element.style.transform,
+                    opacity: element.style.opacity,
+                    backgroundColor: element.style.backgroundColor
+                };
+
+                // Визуальная обратная связь
+                element.style.transform = 'scale(0.95)';
+                element.style.opacity = '0.8';
+
+                // Диспатчим события мыши для CSS эффектов
+                this.dispatchMouseEvent(element, 'mousedown');
+
+                setTimeout(() => {
+                    this.dispatchMouseEvent(element, 'mouseup');
+
+                    // Восстанавливаем стиль
+                    Object.keys(originalStyle).forEach(prop => {
+                        element.style[prop] = originalStyle[prop];
+                    });
+                }, 100);
+
+                // Добавляем в обработанные
+                this.state.processedElements.add(element);
+
+            } catch (error) {
+                this.handleError('Ошибка визуальной симуляции', error, element);
+            }
         }
 
         /**
@@ -1017,20 +1195,25 @@
          */
         async start() {
             if (this.state.isRunning) {
-                console.warn('DynamicContentDetector уже запущен');
+                console.warn("DynamicContentDetector уже запущен");
                 return;
             }
 
-            console.log('🚀 Запуск автоматического обхода элементов...');
+            console.log("🚀 Запуск автоматического обхода элементов...");
             this.state.isRunning = true;
-            this.state.initialElementsCount = document.querySelectorAll('*').length;
+            this.state.initialElementsCount = document.querySelectorAll("*").length;
 
             try {
+                // Блокируем навигацию если включена опция
+                if (this.options.disableNavigation) {
+                    this.blockNavigation();
+                }
+
                 await this.setupObserver();
                 await this.performFullScan();
 
                 this.state.isRunning = false;
-                this.log('✅ Автоматический обход завершен успешно', 'success');
+                this.log("✅ Автоматический обход завершен успешно", "success");
 
                 if (this.options.onComplete) {
                     this.options.onComplete(this.getResults());
@@ -1038,7 +1221,12 @@
 
             } catch (error) {
                 this.state.isRunning = false;
-                this.handleError('Критическая ошибка при обходе', error);
+                this.handleError("Критическая ошибка при обходе", error);
+            } finally {
+                // Всегда разблокируем навигацию
+                if (this.isNavigationBlocked) {
+                    this.unblockNavigation();
+                }
             }
         }
 
@@ -1159,85 +1347,45 @@
         async interactWithClickables() {
             if (!this.options.enableClick) return;
 
-            const clickableElements = this.getAllElements(this.selectors.interactive);
-            this.log(`👆 Обработка ${clickableElements.length} кликабельных элементов`);
+            const elements = this.getAllElements(this.selectors.interactive);
+            this.log(`👆 Безопасная обработка ${elements.length} кликабельных элементов`);
 
-            // Сортируем по приоритету (сначала кнопки, потом ссылки)
-            clickableElements.sort((a, b) => {
+            // Сортируем по приоритету безопасности
+            elements.sort((a, b) => {
                 const priorityA = this.getClickPriority(a);
                 const priorityB = this.getClickPriority(b);
                 return priorityB - priorityA;
             });
 
-            for (const element of clickableElements) {
+            for (const element of elements) {
                 if (!this.isElementInteractable(element)) continue;
-                if (this.isDestructiveElement(element)) continue;
 
                 try {
-                    const initialHTML = document.body.innerHTML.length;
+                    const beforeHTML = document.body.innerHTML.length;
 
-                    // Различные типы кликов
-                    await this.performClick(element);
+                    // Используем безопасный клик
+                    const clicked = this.safeClick(element);
 
-                    // Проверяем, изменилась ли страница
-                    await this.delay(this.options.clickDelay);
-                    const newHTML = document.body.innerHTML.length;
+                    if (clicked) {
+                        await this.delay(this.options.clickDelay);
 
-                    if (Math.abs(newHTML - initialHTML) > 100) {
-                        this.log(`📄 Обнаружены изменения DOM после клика`, 'info');
-                        await this.checkForNewElements();
+                        // Проверяем изменения DOM
+                        const afterHTML = document.body.innerHTML.length;
+                        const domChanged = Math.abs(afterHTML - beforeHTML) > 100;
+
+                        if (domChanged) {
+                            this.log("📄 Обнаружены изменения DOM после безопасного клика", "info");
+                            await this.checkForNewElements();
+                        }
+
+                        this.state.processedElements.add(element);
                     }
-
-                    this.state.processedElements.add(element);
 
                 } catch (error) {
-                    this.handleError(`Ошибка клика по элементу`, error, element);
+                    this.handleError("Ошибка безопасного клика по элементу", error, element);
                 }
             }
         }
-
-        /**
-         * Выполнение клика с различными модификаторами
-         */
-        async performClick(element) {
-            const tagName = element.tagName.toLowerCase();
-            const isLink = (tagName === 'a' && element.href);
-
-            if (isLink && this.options.disableNavigation) {
-                this.dispatchMouseEvent(element, 'mousedown');
-                this.dispatchMouseEvent(element, 'click');
-                this.dispatchMouseEvent(element, 'mouseup');
-                await this.delay(this.options.clickDelay);
-                return;
-            }
-
-            if (tagName === 'select') {
-                element.focus();
-                element.click();
-
-                const options = element.querySelectorAll('option');
-                for (let i = 0; i < Math.min(options.length, 3); i++) {
-                    const opt = options[i];
-                    if (opt && !opt.disabled) {
-                        element.value = opt.value;
-                        element.dispatchEvent(new Event('change', { bubbles: true }));
-                        await this.delay(this.options.inputDelay);
-                    }
-                }
-            } else if (element.type === 'checkbox' || element.type === 'radio') {
-                element.click();
-                await this.delay(this.options.inputDelay);
-                element.click();
-            } else {
-                element.click();
-
-                if (element.classList.contains('dblclick') || element.hasAttribute('ondblclick')) {
-                    await this.delay(100);
-                    this.dispatchMouseEvent(element, 'dblclick');
-                }
-            }
-        }
-
 
         /**
          * Работа с формами
@@ -1551,19 +1699,54 @@
         }
 
         isDestructiveElement(element) {
+            if (!element) return true;
+
             const destructiveSelectors = [
-                '[type="submit"]', 'input[type="submit"]', 'button[type="submit"]',
-                '.delete', '.remove', '.destroy', '.logout', '.signout',
-                'a[href*="delete"]', 'a[href*="remove"]', 'a[href*="logout"]'
+                '[type="submit"]',
+                'input[type="submit"]',
+                'button[type="submit"]',
+                '.delete', '.remove', '.destroy',
+                '.logout', '.signout', '.exit',
+                '.cancel', '.close', '.dismiss',
+                'a[href*="delete"]', 'a[href*="remove"]',
+                'a[href*="logout"]', 'a[href*="exit"]',
+                'button[onclick*="delete"]',
+                'button[onclick*="remove"]',
+                '[data-action*="delete"]',
+                '[data-action*="remove"]'
             ];
 
-            return destructiveSelectors.some(selector => {
+            // Проверяем по селекторам
+            const matchesDestructive = destructiveSelectors.some(selector => {
                 try {
                     return element.matches(selector);
                 } catch {
                     return false;
                 }
             });
+
+            if (matchesDestructive) return true;
+
+            // Проверяем текстовое содержимое
+            const text = (element.textContent || element.value || '').toLowerCase();
+            const destructiveWords = ['delete', 'remove', 'destroy', 'logout', 'sign out', 'exit', 'cancel', 'close'];
+
+            return destructiveWords.some(word => text.includes(word));
+        }
+
+        stop() {
+            this.state.isRunning = false;
+
+            if (this.observer) {
+                this.observer.disconnect();
+            }
+
+            // Разблокируем навигацию при остановке
+            if (this.isNavigationBlocked) {
+                this.unblockNavigation();
+            }
+
+            this.log("⏹️ Процесс остановлен пользователем");
         }
 
         getClickPriority(element) {
