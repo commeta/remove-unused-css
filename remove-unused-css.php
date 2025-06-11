@@ -12,7 +12,11 @@ if (!file_exists(__DIR__ . '/vendor/autoload.php')) {
     http_response_code(500);
     die('Composer dependencies not installed. Run: composer install');
 }
+
 require_once __DIR__ . '/vendor/autoload.php';
+
+// Путь к файлу блокировки
+const LOCK_FILE = __DIR__ . '/process.lock';
 
 use Sabberworm\CSS\Parser;
 use Sabberworm\CSS\CSSList\Document;
@@ -705,14 +709,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 try {
+    // Открываем файл-блокировку и захватываем эксклюзивную блокировку
+    $lockFp = fopen(LOCK_FILE, 'c+');
+    if (!$lockFp) {
+        throw new RuntimeException('Не удалось открыть lock-файл');
+    }
+    // Блокируем до освобождения предыдущим процессом
+    flock($lockFp, LOCK_EX);
+
+    // Запуск основного процесса
     $processor = new RemoveUnusedCSSProcessor();
     $processor->processRequest();
+
+    // Освобождаем блокировку
+    flock($lockFp, LOCK_UN);
+    fclose($lockFp);
 } catch (Throwable $e) {
+    // В случае критической ошибки также освобождаем файл
+    if (isset($lockFp) && is_resource($lockFp)) {
+        flock($lockFp, LOCK_UN);
+        fclose($lockFp);
+    }
     http_response_code(500);
     header('Content-Type: application/json; charset=utf-8');
     $response = [
         'success' => false,
-        'error' => 'Critical error occurred',
+        'error'   => 'Critical error occurred',
         'message' => $e->getMessage()
     ];
     echo json_encode($response, JSON_UNESCAPED_UNICODE);
@@ -724,4 +746,5 @@ try {
         $e->getTraceAsString()
     ));
 }
+
 ?>
