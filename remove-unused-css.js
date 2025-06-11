@@ -1452,35 +1452,43 @@
             }
         }
 
-
-
         async discoverLinksOnCurrentPage() {
             const currentUrl = window.location.href;
             const currentCleanUrl = this.cleanUrl(currentUrl);
-            const foundLinks = new Set();
 
-            // Получаем все ссылки на странице
+            // Определяем базовый href из <base>, если есть
+            let baseHref = currentUrl;
+            const baseEl = document.querySelector('base[href]');
+            if (baseEl) {
+                try {
+                    baseHref = new URL(baseEl.getAttribute('href'), currentUrl).href;
+                    this.log(`🐛 Используем base href: ${baseHref}`, 'debug');
+                } catch (e) {
+                    this.log(`❌ Ошибка разбора base href: ${e.message}`, 'debug');
+                    baseHref = currentUrl;
+                }
+            }
+
+            const foundLinks = new Set();
             const links = document.querySelectorAll('a[href]');
             this.log(`🔗 Найдено ${links.length} ссылок на странице`);
 
-            // Массив для батч-проверки URL
             const urlsToCheck = [];
-
             for (const link of links) {
                 try {
                     const href = link.getAttribute('href');
-                    if (!href || href.trim() === '') continue;
+                    if (!href || !href.trim()) continue;
 
-                    // Создаем абсолютный URL
                     let absoluteUrl;
                     try {
-                        absoluteUrl = new URL(href, currentUrl).href;
+                        // Разрешаем относительно baseHref
+                        absoluteUrl = new URL(href, baseHref).href;
                     } catch (urlError) {
                         this.log(`⚠️ Некорректный URL: ${href}`, 'debug');
                         continue;
                     }
 
-                    // Первичная валидация
+                    // Первичная валидация по протоколу/домену/длине и т.п.
                     if (!this.isValidCrawlableUrl(absoluteUrl)) {
                         continue;
                     }
@@ -1492,14 +1500,13 @@
                         this.log(`🔄 Пропуск текущей страницы: ${cleanUrl}`, 'debug');
                         continue;
                     }
-
-                    // Проверяем паттерны исключений
+                    // Пропускаем по паттернам
                     if (this.shouldSkipUrl(cleanUrl)) {
                         this.log(`🚫 URL пропущен по паттерну: ${cleanUrl}`, 'debug');
                         continue;
                     }
 
-                    // Проверяем, нет ли уже в базе
+                    // Проверяем, есть ли в БД
                     const existing = await this.getUrlFromDB(cleanUrl);
                     if (!existing) {
                         foundLinks.add(cleanUrl);
@@ -1508,15 +1515,13 @@
                     } else {
                         this.log(`🔄 URL уже в базе: ${cleanUrl}`, 'debug');
                     }
-
                 } catch (error) {
                     this.log(`❌ Ошибка обработки ссылки ${link.getAttribute('href')}: ${error.message}`, 'debug');
                     continue;
                 }
             }
 
-            // Батч-проверка доступности новых URL (проверяем только первые 20)
-            // const urlsToValidate = urlsToCheck.slice(0, 20);
+            // Проверяем доступность найденных ссылок
             const urlsToValidate = urlsToCheck;
             this.log(`🔍 Проверка доступности ${urlsToValidate.length} новых URL`);
 
@@ -1542,33 +1547,23 @@
                             this.log(`⚠️ Не удалось сохранить URL: ${finalUrl}`, 'debug');
                         }
 
-                        // Если был редирект, сохраняем оригинальный URL как обработанный
+                        // Если был редирект, сохраняем исходный как обработанный
                         if (availability.redirected && finalUrl !== url) {
                             await this.saveUrlToDB(url, this.currentDepth + 1, currentUrl, 'redirect_processed');
                         }
-
                     } else {
-                        // URL недоступен, сохраняем с соответствующим статусом
+                        // URL недоступен, сохраняем с ошибочным статусом
                         await this.saveUrlToDB(url, this.currentDepth + 1, currentUrl, `error_${availability.status}`);
                         this.log(`❌ URL недоступен (${availability.status}): ${url}`, 'debug');
                     }
 
-                    // Небольшая пауза между проверками
+                    // Пауза между проверками
                     await new Promise(resolve => setTimeout(resolve, 200));
-
                 } catch (error) {
                     this.handleError(`Ошибка проверки URL ${url}`, error);
-                    // Сохраняем URL с ошибкой для возможной повторной обработки
                     await this.saveUrlToDB(url, this.currentDepth + 1, currentUrl, 'check_error');
                 }
             }
-
-            // Остальные URL сохраняем без проверки (будут проверены при обработке)
-            //const remainingUrls = urlsToCheck.slice(20);
-            //for (const url of remainingUrls) {
-            //const saved = await this.saveUrlToDB(url, this.currentDepth + 1, currentUrl, 'pending');
-            //if (saved) savedCount++;
-            //}
 
             this.log(`🔗 Найдено ${foundLinks.size} уникальных ссылок`);
             this.log(`✅ Проверено на доступность: ${checkedCount}`);
@@ -1576,7 +1571,6 @@
 
             this.totalFound += savedCount;
         }
-
 
         async getUrlFromDB(url) {
             if (!this.db) return null;
