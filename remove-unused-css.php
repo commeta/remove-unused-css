@@ -723,7 +723,7 @@ try {
     } else {
         // Windows: создаём файл-флаг, ждём удаления предыдущего
         $start = time();
-        $timeout = 60; // секунд
+        $timeout = 120; // секунд
         while (file_exists(LOCK_FILE)) {
             if (time() - $start > $timeout) {
                 // форсируем удаление старого
