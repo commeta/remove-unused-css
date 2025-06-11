@@ -721,18 +721,19 @@ try {
         }
         flock($lockFp, LOCK_EX);
     } else {
-        // Windows: создаём файл-флаг, ждём удаления предыдущего
-        $start = time();
-        $timeout = 120; // секунд
-        while (file_exists(LOCK_FILE)) {
-            if (time() - $start > $timeout) {
-                // форсируем удаление старого
+        // Windows: проверяем возраст файла-флага и ждем его удаления
+        if (file_exists(LOCK_FILE)) {
+            $fileAge = time() - filemtime(LOCK_FILE);
+            // если файл старше 120 секунд, считаем его «подвисшим» и удаляем
+            if ($fileAge > 120) {
                 @unlink(LOCK_FILE);
-                break;
             }
+        }
+        // Ждем, пока предыдущий флаг удалится
+        while (file_exists(LOCK_FILE)) {
             usleep(500000); // 0.5 секунды
         }
-        // создаём флаг-файл
+        // создаём новый файл-флаг
         file_put_contents(LOCK_FILE, getmypid());
     }
 
@@ -772,5 +773,6 @@ try {
         $e->getTraceAsString()
     ));
 }
+
 
 ?>
