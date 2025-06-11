@@ -721,17 +721,15 @@ try {
         }
         flock($lockFp, LOCK_EX);
     } else {
-        // Windows: проверяем возраст файла-флага и ждем его удаления
-        if (file_exists(LOCK_FILE)) {
-            $fileAge = time() - filemtime(LOCK_FILE);
-            // если файл старше 120 секунд, считаем его «подвисшим» и удаляем
-            if ($fileAge > 120) {
-                @unlink(LOCK_FILE);
-            }
-        }
-        // Ждем, пока предыдущий флаг удалится
+        // Windows: ждём, пока файл-флаг не исчезнет или не устареет
         while (file_exists(LOCK_FILE)) {
-            usleep(500000); // 0.5 секунды
+            $age = time() - filemtime(LOCK_FILE);
+            if ($age > 120) {
+                // принудительно удаляем "зависший" файл
+                @unlink(LOCK_FILE);
+                break;
+            }
+            usleep(500000); // ждём 0.5 секунды и повторяем проверку
         }
         // создаём новый файл-флаг
         file_put_contents(LOCK_FILE, getmypid());
