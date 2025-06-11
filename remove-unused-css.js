@@ -636,6 +636,10 @@
 
                     await crawler.reset();
 
+                    //if (typeof detector !== 'undefined' && detector.state.isRunning) {
+                        //await detector.stop();
+                    //}                    
+
                     this.showNotification('Данные успешно сброшены', 'success');
                 }
 
@@ -1868,7 +1872,7 @@
 
                 // Включить/отключить типы взаимодействий
                 enableHover: true,         // эмулировать наведение курсора
-                enableClick: false,        // эмулировать клики (false — без кликов)
+                enableClick: true,        // эмулировать клики (false — без кликов)
                 enableFocus: true,         // эмулировать фокус на элементах
                 enableScroll: true,        // эмулировать прокрутку
                 enableResize: true,        // эмулировать изменение размеров окна
@@ -1902,45 +1906,47 @@
             };
 
             this.selectors = {
-                // Интерактивные элементы
                 interactive: [
-                    'button', 'input', 'textarea', 'select', 'a',
+                    'button', 'input', 'textarea', 'select', 'a[href]',
                     '[onclick]', '[onmouseover]', '[onmouseenter]', '[onmouseleave]',
                     '[onfocus]', '[onblur]', '[onchange]', '[onsubmit]',
-                    '[tabindex]', '[role="button"]', '[role="tab"]', '[role="menuitem"]'
+                    '[tabindex]:not([tabindex="-1"])', '[role="button"]', 
+                    '[role="tab"]', '[role="menuitem"]', '[role="link"]',
+                    '.btn', '.button', '.link', '.clickable'
                 ],
-
-                // Элементы с состояниями
+                
                 stateful: [
                     '.active', '.selected', '.expanded', '.collapsed', '.open', '.closed',
-                    '.visible', '.hidden', '.show', '.hide', '.current', '.disabled'
+                    '.visible', '.hidden', '.show', '.hide', '.current', '.disabled',
+                    '.focus', '.hover', '.pressed', '.checked', '.loading'
                 ],
-
-                // Популярные UI компоненты
+                
                 components: [
                     '.modal', '.popup', '.dropdown', '.tooltip', '.accordion', '.tab',
                     '.slider', '.carousel', '.gallery', '.menu', '.navbar', '.sidebar',
-                    '.overlay', '.dialog', '.panel', '.card', '.widget', '.component'
+                    '.overlay', '.dialog', '.panel', '.card', '.widget', '.component',
+                    '.swiper', '.slick', '.owl-carousel', '.splide'
                 ],
-
-                // Hover элементы
+                
                 hoverable: [
-                    'a', 'button', '.btn', '.link', '.hover', '[title]',
-                    '.menu-item', '.nav-item', '.card', '.thumbnail', 'img'
+                    'a[href]', 'button', '.btn', '.button', '.link', '.hover', 
+                    '[title]', '.menu-item', '.nav-item', '.card', '.thumbnail', 
+                    'img[src]', '.image', '.photo', '.gallery-item',
+                    '.product', '.service', '.feature'
                 ],
-
-                // Форм элементы
+                
                 forms: [
                     'input[type="text"]', 'input[type="email"]', 'input[type="password"]',
                     'input[type="number"]', 'input[type="tel"]', 'input[type="url"]',
                     'input[type="search"]', 'input[type="checkbox"]', 'input[type="radio"]',
-                    'textarea', 'select', 'form'
+                    'input[type="range"]', 'input[type="date"]', 'input[type="time"]',
+                    'textarea', 'select', 'form', '[contenteditable="true"]'
                 ],
-
-                // Медиа элементы
+                
                 media: [
                     'video', 'audio', 'iframe', 'object', 'embed',
-                    '.video-player', '.audio-player', '.media-container'
+                    '.video-player', '.audio-player', '.media-container',
+                    '.youtube-player', '.vimeo-player', '.video-wrapper'
                 ]
             };
 
@@ -2173,7 +2179,8 @@
             const steps = [
                 { name: 'Подготовка к сканированию', method: 'prepareScanning' },
                 { name: 'Симуляция изменения размеров экрана', method: 'simulateDeviceResize' },
-                { name: 'Активация hover эффектов', method: 'triggerHoverEffects' },
+                { name: 'Улучшенная активация hover эффектов', method: 'triggerHoverEffects' },
+                { name: 'Обработка каруселей и слайдеров', method: 'handleCarousels' },
                 { name: 'Взаимодействие с кликабельными элементами', method: 'interactWithClickables' },
                 { name: 'Работа с формами', method: 'interactWithForms' },
                 { name: 'Прокрутка и ленивая загрузка', method: 'performScrolling' },
@@ -2183,11 +2190,11 @@
                 { name: 'Триггер кастомных событий', method: 'triggerCustomEvents' },
                 { name: 'Финальная проверка', method: 'finalCheck' }
             ];
-
+            
             for (let i = 0; i < steps.length; i++) {
                 const step = steps[i];
                 this.updateProgress(step.name, (i / steps.length) * 100);
-
+                
                 try {
                     await this[step.method]();
                     await this.delay(this.options.observerDelay);
@@ -2251,28 +2258,31 @@
          */
         async triggerHoverEffects() {
             if (!this.options.enableHover) return;
-
+            
             const hoverElements = this.getAllElements(this.selectors.hoverable);
-            this.log(`🖱️ Обработка ${hoverElements.length} hover элементов`);
-
+            this.log(`🖱️ Улучшенная обработка ${hoverElements.length} hover элементов`);
+            
             for (const element of hoverElements) {
                 if (!this.isElementInteractable(element)) continue;
-
+                
                 try {
-                    // Наводим курсор
+                    // 1. Стандартные mouse события с координатами
                     this.dispatchMouseEvent(element, 'mouseenter');
                     this.dispatchMouseEvent(element, 'mouseover');
-
+                    
+                    // 2. Принудительная активация hover CSS
+                    this.forceHoverStates(element);
+                    
                     await this.delay(this.options.mouseDelay);
-
-                    // Убираем курсор
+                    
+                    // 3. Выход из hover
                     this.dispatchMouseEvent(element, 'mouseleave');
                     this.dispatchMouseEvent(element, 'mouseout');
-
+                    
                     this.state.processedElements.add(element);
-
+                    
                 } catch (error) {
-                    this.handleError(`Ошибка hover для элемента`, error, element);
+                    this.handleError(`Ошибка улучшенного hover для элемента`, error, element);
                 }
             }
         }
@@ -2609,6 +2619,59 @@
          * Утилиты и вспомогательные методы
          */
 
+
+        async handleCarousels() {
+            const carouselSelectors = [
+                '.carousel', '.slider', '.swiper', '.slick', '.owl-carousel',
+                '.splide', '.glide', '.flickity', '.keen-slider',
+                '[data-carousel]', '[data-slider]', '[data-swiper]',
+                '.gallery', '.image-slider', '.product-slider'
+            ];
+            
+            const carousels = this.getAllElements(carouselSelectors);
+            this.log(`🎠 Обработка ${carousels.length} каруселей`);
+            
+            for (const carousel of carousels) {
+                if (!this.isElementInteractable(carousel)) continue;
+                
+                try {
+                    // Ищем кнопки навигации
+                    const navButtons = carousel.querySelectorAll(
+                        '.prev, .next, .arrow, [data-slide], .carousel-control, .slick-arrow'
+                    );
+                    
+                    // Кликаем по кнопкам навигации
+                    for (const button of navButtons) {
+                        if (this.isElementInteractable(button)) {
+                            this.safeClick(button);
+                            await this.delay(this.options.clickDelay);
+                        }
+                    }
+                    
+                    // Симулируем свайп жесты
+                    this.simulateSwipeGestures(carousel);
+                    await this.delay(this.options.scrollDelay);
+                    
+                    // Ищем индикаторы/точки
+                    const indicators = carousel.querySelectorAll(
+                        '.indicator, .dot, .bullet, [data-slide-to], .carousel-indicators li'
+                    );
+                    
+                    for (const indicator of Array.from(indicators).slice(0, 3)) { // Ограничиваем до 3
+                        if (this.isElementInteractable(indicator)) {
+                            this.safeClick(indicator);
+                            await this.delay(this.options.clickDelay);
+                        }
+                    }
+                    
+                    this.state.processedElements.add(carousel);
+                    
+                } catch (error) {
+                    this.handleError(`Ошибка обработки карусели`, error, carousel);
+                }
+            }
+        }
+
         getAllElements(selectors) {
             const elements = new Set();
 
@@ -2700,12 +2763,185 @@
         }
 
         dispatchMouseEvent(element, eventType) {
+            if (!element) return;
+            
+            const rect = element.getBoundingClientRect();
+            const center = {
+                x: rect.left + rect.width / 2,
+                y: rect.top + rect.height / 2
+            };
+            
+            // Создаем событие с реальными координатами
             const event = new MouseEvent(eventType, {
+                clientX: center.x,
+                clientY: center.y,
+                screenX: center.x + window.screenX,
+                screenY: center.y + window.screenY,
+                bubbles: true,
+                cancelable: true,
                 view: window,
+                detail: eventType === 'click' ? 1 : 0
+            });
+            
+            element.dispatchEvent(event);
+            
+            // Дополнительно: пытаемся активировать CSS hover через focus/blur
+            if (eventType === 'mouseenter' && element.focus) {
+                try {
+                    element.focus();
+                    setTimeout(() => element.blur(), 100);
+                } catch (e) {}
+            }
+        }
+
+        forceHoverStates(element) {
+            if (!element) return;
+            
+            // Создаем временный CSS для принудительной активации hover
+            const testId = 'hover-test-' + Date.now();
+            const style = document.createElement('style');
+            
+            // Получаем все CSS правила для этого элемента
+            const computedStyle = window.getComputedStyle(element);
+            const elementSelectors = this.getElementSelectors(element);
+            
+            // Создаем CSS правила для принудительного hover
+            let hoverCSS = '';
+            elementSelectors.forEach(selector => {
+                hoverCSS += `
+                    ${selector}.${testId},
+                    ${selector}.${testId}:hover {
+                        transition: all 0.1s ease !important;
+                    }
+                `;
+            });
+            
+            style.textContent = hoverCSS;
+            document.head.appendChild(style);
+            
+            // Применяем класс
+            element.classList.add(testId);
+            
+            // Удаляем через короткий промежуток
+            setTimeout(() => {
+                element.classList.remove(testId);
+                style.remove();
+            }, 500);
+        }
+
+        getElementSelectors(element) {
+            const selectors = [];
+            
+            // ID селектор
+            if (element.id) {
+                selectors.push('#' + element.id);
+            }
+            
+            // Class селекторы
+            if (element.classList.length > 0) {
+                const classSelector = '.' + Array.from(element.classList).join('.');
+                selectors.push(classSelector);
+            }
+            
+            // Tag селектор
+            selectors.push(element.tagName.toLowerCase());
+            
+            return selectors;
+        }
+
+        simulateSwipeGestures(element) {
+            if (!element) return;
+            
+            const rect = element.getBoundingClientRect();
+            const centerY = rect.top + rect.height / 2;
+            
+            // Симулируем свайп влево
+            this.performSwipe(element, {
+                startX: rect.left + rect.width * 0.8,
+                endX: rect.left + rect.width * 0.2,
+                y: centerY
+            });
+            
+            // Пауза между жестами
+            setTimeout(() => {
+                // Симулируем свайп вправо
+                this.performSwipe(element, {
+                    startX: rect.left + rect.width * 0.2,
+                    endX: rect.left + rect.width * 0.8,
+                    y: centerY
+                });
+            }, 1000);
+        }
+
+        performSwipe(element, coords) {
+            // TouchEvent может не поддерживаться в некоторых браузерах
+            try {
+                const touchStart = new TouchEvent('touchstart', {
+                    touches: [{
+                        clientX: coords.startX,
+                        clientY: coords.y,
+                        target: element
+                    }],
+                    bubbles: true,
+                    cancelable: true
+                });
+                
+                const touchMove = new TouchEvent('touchmove', {
+                    touches: [{
+                        clientX: (coords.startX + coords.endX) / 2,
+                        clientY: coords.y,
+                        target: element
+                    }],
+                    bubbles: true,
+                    cancelable: true
+                });
+                
+                const touchEnd = new TouchEvent('touchend', {
+                    changedTouches: [{
+                        clientX: coords.endX,
+                        clientY: coords.y,
+                        target: element
+                    }],
+                    bubbles: true,
+                    cancelable: true
+                });
+                
+                element.dispatchEvent(touchStart);
+                setTimeout(() => element.dispatchEvent(touchMove), 50);
+                setTimeout(() => element.dispatchEvent(touchEnd), 150);
+                
+            } catch (error) {
+                // Fallback: используем обычные mouse события для drag
+                this.simulateDragGesture(element, coords);
+            }
+        }
+
+
+        simulateDragGesture(element, coords) {
+            const mouseDown = new MouseEvent('mousedown', {
+                clientX: coords.startX,
+                clientY: coords.y,
                 bubbles: true,
                 cancelable: true
             });
-            element.dispatchEvent(event);
+            
+            const mouseMove = new MouseEvent('mousemove', {
+                clientX: coords.endX,
+                clientY: coords.y,
+                bubbles: true,
+                cancelable: true
+            });
+            
+            const mouseUp = new MouseEvent('mouseup', {
+                clientX: coords.endX,
+                clientY: coords.y,
+                bubbles: true,
+                cancelable: true
+            });
+            
+            element.dispatchEvent(mouseDown);
+            setTimeout(() => element.dispatchEvent(mouseMove), 50);
+            setTimeout(() => element.dispatchEvent(mouseUp), 150);
         }
 
         async checkForNewElements() {
