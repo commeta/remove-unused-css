@@ -22,8 +22,19 @@
         MENU_ID: 'unused-css-menu',
 
         // HTML-ID блока настроек фильтрации (какие правила/селекторы сохранять)
-        SETTINGS_ID: 'unused-css-settings'
+        SETTINGS_ID: 'unused-css-settings',
+
+        CRAWLER_DB_NAME: 'SiteCrawlerDB',
+        CRAWLER_DB_VERSION: 13,
+        CRAWLER_STORE_NAME: 'crawled_urls',
+        CRAWLER_STATUS_KEY: 'crawler_status',
+        MAX_CRAWL_DEPTH: 5,
+        CRAWL_DELAY: 3000,
+        MAX_URLS_PER_SESSION: 100
+
     };
+
+
 
 
     // Состояние приложения: хранит данные для анализа и настройки очистки CSS
@@ -526,7 +537,9 @@
                 { text: 'Генерировать файлы', action: 'generate', icon: '⚙️' },
                 { text: 'Показать отчет', action: 'report', icon: '📊' },
                 { text: 'Настройки', action: 'settings', icon: '⚙️' },
-                { text: 'Детектор', action: 'detector', icon: '🔍' }
+                { text: 'Детектор', action: 'detector', icon: '🔍' },
+                { text: 'Краулер', action: 'crawler', icon: '🕷️' },
+                { text: 'Сброс данных', action: 'reset', icon: '🔄' }
             ];
 
             menuItems.forEach((item, index) => {
@@ -606,6 +619,70 @@
         static async handleMenuClick(action) {
             if (state.isProcessing) return;
 
+            if (action === 'reset') {
+                if (confirm('Вы уверены, что хотите сбросить все данные? Это действие нельзя отменить!')) {
+                    state.unusedSelectors.clear();
+                    state.styleSheetsInfo.clear();
+                    state.totalUnusedCount = 0;
+                    state.currentPageSelectors.clear();
+
+                    if (typeof crawler === 'undefined') {
+                        return;
+                    }
+                    
+                    if (crawler.isRunning) {
+                        await crawler.stop();
+                    }
+
+
+                    if (typeof crawler !== 'undefined' && crawler.isRunning) {
+                        await crawler.stop();
+                    }
+
+                    if (typeof crawler !== 'undefined') {
+                        await crawler.reset();
+                    }
+
+                    //if (typeof detector !== 'undefined' && detector.state.isRunning) {
+                        //await detector.stop();
+                    //}                    
+
+                    this.showNotification('Данные успешно сброшены', 'success');
+                }
+
+                return;
+            }
+
+            if (action === 'crawler') {
+                try {
+                    if (typeof crawler === 'undefined') {
+                        console.warn('SiteCrawler не инициализирован');
+                        this.showNotification('Краулер не найден', 'error');
+                        return;
+                    }
+
+                    const stats = await crawler.getStats();
+
+                    if (crawler.isRunning) {
+                        await crawler.stop();
+                        return;
+                    }
+
+                    // Показываем подтверждение
+                    const confirmMessage = `Запустить автоматический обход сайта?\n\nТекущая статистика:\n• Найдено URL: ${stats.total}\n• Обработано: ${stats.completed}\n• Ожидает: ${stats.pending}\n\nВнимание: процесс может занять много времени!`;
+
+                    if (confirm(confirmMessage)) {
+                        await crawler.start();
+                        this.showNotification('Краулер запущен', 'success');
+                    }
+                } catch (error) {
+                    console.error('Ошибка запуска краулера:', error);
+                    this.showNotification('Не удалось запустить краулер', 'error');
+                }
+                return;
+            }
+
+
             // Настройки
             if (action === 'settings') {
                 SettingsManager.showSettings();
@@ -665,7 +742,6 @@
                 }
             }
         }
-
 
         static showDetailedReport(data) {
             let totalSelectors = 0;
@@ -895,16 +971,887 @@
         }
     }
 
+
+
+    class SiteCrawler {
+        constructor() {
+            this.db = null;
+            this.isRunning = false;
+            this.currentDepth = 0;
+            this.crawledCount = 0;
+            this.totalFound = 0;
+            this.currentUrl = '';
+            this.startUrl = window.location.origin;
+            this.urlQueue = new Set();
+            this.processedUrls = new Set();
+            this.errors = [];
+            this.baseUrl = window.location.origin;
+        }
+
+
+        async checkUrlAvailability(url) {
+            try {
+                this.log(`🔍 Проверка доступности: ${url}`, 'debug');
+
+                // Используем fetch с методом HEAD для экономии трафика
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 сек таймаут
+
+                const response = await fetch(url, {
+                    method: 'HEAD',
+                    signal: controller.signal,
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (compatible; SiteCrawler/1.0)',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+                    },
+                    credentials: 'same-origin',
+                    redirect: 'follow'
+                });
+
+                clearTimeout(timeoutId);
+
+                const result = {
+                    isValid: response.ok,
+                    status: response.status,
+                    error: null,
+                    redirected: response.redirected,
+                    finalUrl: response.url
+                };
+
+                if (!response.ok) {
+                    result.error = `HTTP ${response.status} ${response.statusText}`;
+                    this.log(`❌ URL недоступен: ${url} (${response.status})`, 'debug');
+                } else {
+                    this.log(`✅ URL доступен: ${url} (${response.status})`, 'debug');
+                }
+
+                return result;
+
+            } catch (error) {
+                const result = {
+                    isValid: false,
+                    status: 0,
+                    error: error.name === 'AbortError' ? 'Timeout' : error.message,
+                    redirected: false,
+                    finalUrl: url
+                };
+
+                this.log(`❌ Ошибка проверки URL ${url}: ${error.message}`, 'debug');
+                return result;
+            }
+        }
+
+        isValidCrawlableUrl(url) {
+            try {
+                const urlObj = new URL(url);
+
+                // Проверка протокола
+                if (!['http:', 'https:'].includes(urlObj.protocol)) {
+                    this.log(`🚫 Неподдерживаемый протокол: ${url}`, 'debug');
+                    return false;
+                }
+
+                // Проверка домена
+                if (urlObj.hostname !== new URL(this.baseUrl).hostname) {
+                    this.log(`🚫 Внешний домен: ${url}`, 'debug');
+                    return false;
+                }
+
+                // Проверка длины URL
+                if (url.length > 2000) {
+                    this.log(`🚫 URL слишком длинный: ${url}`, 'debug');
+                    return false;
+                }
+
+                // Проверка на подозрительные параметры
+                const suspiciousParams = ['token', 'session', 'auth', 'key', 'password'];
+                const hasSecret = suspiciousParams.some(param =>
+                    urlObj.searchParams.has(param) || url.toLowerCase().includes(param)
+                );
+
+                if (hasSecret) {
+                    this.log(`🚫 URL содержит подозрительные параметры: ${url}`, 'debug');
+                    return false;
+                }
+
+                return true;
+
+            } catch (error) {
+                this.log(`❌ Ошибка валидации URL ${url}: ${error.message}`, 'debug');
+                return false;
+            }
+        }
+
+
+        async init() {
+            try {
+                await this.initIndexedDB();
+                await this.loadCrawlerStatus();
+                this.log('🕷️ Crawler инициализирован');
+                return true;
+            } catch (error) {
+                this.handleError('Ошибка инициализации Crawler', error);
+                return false;
+            }
+        }
+
+        async initIndexedDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(CONFIG.CRAWLER_DB_NAME, CONFIG.CRAWLER_DB_VERSION);
+
+                request.onerror = () => reject(request.error);
+                request.onsuccess = () => {
+                    this.db = request.result;
+                    resolve();
+                };
+
+                request.onupgradeneeded = (event) => {
+                    const db = event.target.result;
+
+                    // Создаем хранилище для URL-ов
+                    if (!db.objectStoreNames.contains(CONFIG.CRAWLER_STORE_NAME)) {
+                        const store = db.createObjectStore(CONFIG.CRAWLER_STORE_NAME, {
+                            keyPath: 'url'
+                        });
+                        store.createIndex('status', 'status', { unique: false });
+                        store.createIndex('depth', 'depth', { unique: false });
+                        store.createIndex('foundOn', 'foundOn', { unique: false });
+                    }
+                };
+            });
+        }
+
+        async saveUrlToDB(url, depth = 0, foundOn = '', status = 'pending') {
+            if (!this.db) return false;
+
+            try {
+                const transaction = this.db.transaction([CONFIG.CRAWLER_STORE_NAME], 'readwrite');
+                const store = transaction.objectStore(CONFIG.CRAWLER_STORE_NAME);
+
+                const urlData = {
+                    url: url,
+                    depth: depth,
+                    foundOn: foundOn,
+                    status: status,
+                    timestamp: Date.now(),
+                    processed: false
+                };
+
+                await new Promise((resolve, reject) => {
+                    const request = store.put(urlData);
+                    request.onsuccess = () => resolve();
+                    request.onerror = () => reject(request.error);
+                });
+
+                return true;
+            } catch (error) {
+                this.handleError('Ошибка сохранения URL в БД', error);
+                return false;
+            }
+        }
+
+        async getNextUrlFromDB() {
+            if (!this.db) return null;
+
+            try {
+                const transaction = this.db.transaction([CONFIG.CRAWLER_STORE_NAME], 'readonly');
+                const store = transaction.objectStore(CONFIG.CRAWLER_STORE_NAME);
+                const index = store.index('status');
+
+                return new Promise((resolve, reject) => {
+                    const request = index.openCursor(IDBKeyRange.only('pending'));
+                    request.onsuccess = (event) => {
+                        const cursor = event.target.result;
+                        if (cursor) {
+                            resolve(cursor.value);
+                        } else {
+                            resolve(null);
+                        }
+                    };
+                    request.onerror = () => reject(request.error);
+                });
+            } catch (error) {
+                this.handleError('Ошибка получения URL из БД', error);
+                return null;
+            }
+        }
+
+        async markUrlAsProcessed(url, status = 'completed') {
+            if (!this.db) return false;
+
+            try {
+                const transaction = this.db.transaction([CONFIG.CRAWLER_STORE_NAME], 'readwrite');
+                const store = transaction.objectStore(CONFIG.CRAWLER_STORE_NAME);
+
+                const getRequest = store.get(url);
+                getRequest.onsuccess = () => {
+                    const urlData = getRequest.result;
+                    if (urlData) {
+                        urlData.status = status;
+                        urlData.processed = true;
+                        urlData.processedAt = Date.now();
+                        store.put(urlData);
+                    }
+                };
+
+                return true;
+            } catch (error) {
+                this.handleError('Ошибка обновления статуса URL', error);
+                return false;
+            }
+        }
+
+        async getAllUrlsFromDB() {
+            if (!this.db) return [];
+
+            try {
+                const transaction = this.db.transaction([CONFIG.CRAWLER_STORE_NAME], 'readonly');
+                const store = transaction.objectStore(CONFIG.CRAWLER_STORE_NAME);
+
+                return new Promise((resolve, reject) => {
+                    const request = store.getAll();
+                    request.onsuccess = () => resolve(request.result || []);
+                    request.onerror = () => reject(request.error);
+                });
+            } catch (error) {
+                this.handleError('Ошибка получения всех URL', error);
+                return [];
+            }
+        }
+
+
+        async loadCrawlerStatus() {
+            try {
+                const status = localStorage.getItem(CONFIG.CRAWLER_STATUS_KEY);
+                if (status) {
+                    const parsed = JSON.parse(status);
+                    this.isRunning = parsed.isRunning || false;
+                    this.crawledCount = parsed.crawledCount || 0;
+                    this.currentDepth = parsed.currentDepth || 0;
+
+                    // Если краулер был запущен, но страница перезагрузилась
+                    if (this.isRunning) {
+                        this.log('🔄 Продолжение работы краулера после перезагрузки');
+
+                        // Обрабатываем текущую страницу и продолжаем
+                        setTimeout(async () => {
+                            await this.processCurrentPage();
+                            await this.continueCrawling();
+                        }, 2000);
+                    }
+                }
+            } catch (error) {
+                this.handleError('Ошибка загрузки статуса краулера', error);
+            }
+        }
+
+
+
+        saveCrawlerStatus() {
+            try {
+                const status = {
+                    isRunning: this.isRunning,
+                    crawledCount: this.crawledCount,
+                    currentDepth: this.currentDepth,
+                    timestamp: Date.now()
+                };
+                localStorage.setItem(CONFIG.CRAWLER_STATUS_KEY, JSON.stringify(status));
+            } catch (error) {
+                this.handleError('Ошибка сохранения статуса краулера', error);
+            }
+        }
+
+        async start() {
+            if (this.isRunning) {
+                this.log('⚠️ Краулер уже запущен');
+                return;
+            }
+
+            this.log('🚀 Запуск краулера сайта...');
+            this.isRunning = true;
+            this.crawledCount = 0;
+            this.currentDepth = 0;
+            this.saveCrawlerStatus();
+
+            try {
+                // Обрабатываем текущую страницу СРАЗУ, не добавляя в очередь
+                this.log('🔍 Обработка стартовой страницы...');
+                await this.discoverLinksOnCurrentPage();
+
+
+                if (typeof detector !== 'undefined') {
+                    this.log('🤖 Запуск детектора на стартовой странице...');
+                    await new Promise(resolve => {
+                        const originalOnComplete = detector.options.onComplete;
+                        detector.options.onComplete = (results) => {
+                            if (originalOnComplete) originalOnComplete(results);
+                            resolve();
+                        };
+                        detector.start();
+                    });
+                    this.log('✅ Детектор завершил работу на стартовой странице');
+                }
+
+
+                // Помечаем текущую страницу как обработанную
+                const currentUrl = this.cleanUrl(window.location.href);
+                await this.markUrlAsProcessed(currentUrl, 'completed');
+                this.crawledCount++;
+                this.saveCrawlerStatus();
+
+                // Продолжаем краулинг с найденными ссылками
+                await this.continueCrawling();
+
+            } catch (error) {
+                this.handleError('Ошибка запуска краулера', error);
+                this.stop();
+            }
+        }
+
+
+
+        async continueCrawling() {
+            if (!this.isRunning) return;
+
+            this.log(`📊 Текущий статус: обработано ${this.crawledCount} страниц`);
+
+            if (this.crawledCount >= CONFIG.MAX_URLS_PER_SESSION) {
+                this.log('🛑 Достигнут лимит страниц за сессию');
+                this.stop();
+                return;
+            }
+
+            // Получаем следующий URL из БД
+            const nextUrlData = await this.getNextUrlFromDB();
+
+            if (!nextUrlData) {
+                this.log('✅ Краулинг завершен - все доступные страницы обработаны');
+                this.stop();
+                return;
+            }
+
+            const nextUrl = nextUrlData.url;
+            this.log(`🔍 Найден следующий URL: ${nextUrl}`);
+
+            // Проверяем доступность URL перед переходом
+            const availability = await this.checkUrlAvailability(nextUrl);
+
+            if (!availability.isValid) {
+                this.log(`❌ URL недоступен: ${nextUrl} - ${availability.error || `Status: ${availability.status}`}`);
+
+                // Помечаем URL как недоступный
+                await this.markUrlAsProcessed(nextUrl, `error_${availability.status}`);
+
+                // Записываем ошибку в статистику
+                this.handleError(`Недоступный URL: ${nextUrl}`, new Error(availability.error || `HTTP ${availability.status}`));
+
+                // Продолжаем с следующим URL
+                setTimeout(() => this.continueCrawling(), 1000);
+                return;
+            }
+
+            // Если URL был перенаправлен, обновляем информацию
+            if (availability.redirected && availability.finalUrl !== nextUrl) {
+                this.log(`🔄 Обнаружено перенаправление: ${nextUrl} → ${availability.finalUrl}`);
+
+                // Проверяем, не ведет ли редирект на внешний сайт
+                if (!this.isValidCrawlableUrl(availability.finalUrl)) {
+                    this.log(`🚫 Редирект ведет на внешний ресурс: ${availability.finalUrl}`);
+                    await this.markUrlAsProcessed(nextUrl, 'redirect_external');
+                    setTimeout(() => this.continueCrawling(), 1000);
+                    return;
+                }
+
+                // Сохраняем информацию о редиректе
+                await this.saveUrlToDB(availability.finalUrl, nextUrlData.depth, nextUrl, 'pending');
+                await this.markUrlAsProcessed(nextUrl, 'redirect_processed');
+            }
+
+            this.log(`🌐 Переход на проверенную страницу: ${nextUrl}`);
+
+            // Устанавливаем обработчик для случая, если страница не загрузится
+            const navigationTimeout = setTimeout(() => {
+                this.log('⚠️ Таймаут загрузки страницы, продолжаем краулинг');
+                this.handleError('Таймаут навигации', new Error(`Страница не загрузилась: ${nextUrl}`));
+            }, 15000); // 15 секунд на загрузку
+
+            // Сохраняем информацию о текущем переходе
+            this.currentUrl = nextUrl;
+            this.saveCrawlerStatus();
+
+            try {
+                // Переходим на страницу
+                setTimeout(() => {
+                    clearTimeout(navigationTimeout);
+                    window.location.href = nextUrl;
+                }, CONFIG.CRAWL_DELAY);
+
+            } catch (error) {
+                clearTimeout(navigationTimeout);
+                this.handleError('Ошибка навигации', error);
+                await this.markUrlAsProcessed(nextUrl, 'navigation_error');
+                setTimeout(() => this.continueCrawling(), CONFIG.CRAWL_DELAY);
+            }
+        }
+
+
+
+        async processCurrentPage() {
+            this.log('🔍 Обработка текущей страницы...');
+
+            try {
+                const currentUrl = this.cleanUrl(window.location.href);
+
+                // Проверяем страницу на ошибки
+                /*
+                const pageCheck = await this.checkCurrentPageForErrors();
+                if (pageCheck.hasError) {
+                    this.log(`❌ Обнаружена ошибка на странице: ${pageCheck.errorType}`);
+                    await this.markUrlAsProcessed(currentUrl, `page_error_${pageCheck.errorType}`);
+                    this.crawledCount++;
+                    this.saveCrawlerStatus();
+                    return;
+                }
+                */
+
+                // Помечаем URL как обрабатываемый
+                await this.markUrlAsProcessed(currentUrl, 'processing');
+
+                // Ищем ссылки на странице
+                await this.discoverLinksOnCurrentPage();
+
+                // Запускаем детектор, если доступен
+                if (typeof detector !== 'undefined') {
+                    this.log('🤖 Запуск динамического детектора...');
+
+                    return new Promise((resolve) => {
+                        const originalOnComplete = detector.options.onComplete;
+
+                        detector.options.onComplete = (results) => {
+                            this.log('✅ Детектор завершил работу', results);
+
+                            if (originalOnComplete) {
+                                originalOnComplete(results);
+                            }
+
+                            // Помечаем как успешно обработанный
+                            this.markUrlAsProcessed(currentUrl, 'completed');
+                            this.crawledCount++;
+                            this.saveCrawlerStatus();
+                            resolve();
+                        };
+
+                        detector.start();
+                    });
+                } else {
+                    this.log('⚠️ Детектор не найден, продолжаем без него');
+                    await this.markUrlAsProcessed(currentUrl, 'completed');
+                    this.crawledCount++;
+                    this.saveCrawlerStatus();
+                }
+
+            } catch (error) {
+                this.handleError('Ошибка обработки текущей страницы', error);
+                const currentUrl = this.cleanUrl(window.location.href);
+                await this.markUrlAsProcessed(currentUrl, 'processing_error');
+                this.crawledCount++;
+                this.saveCrawlerStatus();
+            }
+        }
+
+
+
+        async discoverLinksOnCurrentPage() {
+            const currentUrl = window.location.href;
+            const currentCleanUrl = this.cleanUrl(currentUrl);
+            const foundLinks = new Set();
+
+            // Получаем все ссылки на странице
+            const links = document.querySelectorAll('a[href]');
+            this.log(`🔗 Найдено ${links.length} ссылок на странице`);
+
+            // Массив для батч-проверки URL
+            const urlsToCheck = [];
+
+            for (const link of links) {
+                try {
+                    const href = link.getAttribute('href');
+                    if (!href || href.trim() === '') continue;
+
+                    // Создаем абсолютный URL
+                    let absoluteUrl;
+                    try {
+                        absoluteUrl = new URL(href, currentUrl).href;
+                    } catch (urlError) {
+                        this.log(`⚠️ Некорректный URL: ${href}`, 'debug');
+                        continue;
+                    }
+
+                    // Первичная валидация
+                    if (!this.isValidCrawlableUrl(absoluteUrl)) {
+                        continue;
+                    }
+
+                    const cleanUrl = this.cleanUrl(absoluteUrl);
+
+                    // Пропускаем текущую страницу
+                    if (cleanUrl === currentCleanUrl) {
+                        this.log(`🔄 Пропуск текущей страницы: ${cleanUrl}`, 'debug');
+                        continue;
+                    }
+
+                    // Проверяем паттерны исключений
+                    if (this.shouldSkipUrl(cleanUrl)) {
+                        this.log(`🚫 URL пропущен по паттерну: ${cleanUrl}`, 'debug');
+                        continue;
+                    }
+
+                    // Проверяем, нет ли уже в базе
+                    const existing = await this.getUrlFromDB(cleanUrl);
+                    if (!existing) {
+                        foundLinks.add(cleanUrl);
+                        urlsToCheck.push(cleanUrl);
+                        this.log(`✅ Новая ссылка найдена: ${cleanUrl}`, 'debug');
+                    } else {
+                        this.log(`🔄 URL уже в базе: ${cleanUrl}`, 'debug');
+                    }
+
+                } catch (error) {
+                    this.log(`❌ Ошибка обработки ссылки ${link.getAttribute('href')}: ${error.message}`, 'debug');
+                    continue;
+                }
+            }
+
+            // Батч-проверка доступности новых URL (проверяем только первые 20)
+            // const urlsToValidate = urlsToCheck.slice(0, 20);
+            const urlsToValidate = urlsToCheck;
+            this.log(`🔍 Проверка доступности ${urlsToValidate.length} новых URL`);
+
+            let savedCount = 0;
+            let checkedCount = 0;
+
+            for (const url of urlsToValidate) {
+                try {
+                    checkedCount++;
+                    this.log(`🔍 Проверка ${checkedCount}/${urlsToValidate.length}: ${url}`, 'debug');
+
+                    const availability = await this.checkUrlAvailability(url);
+
+                    if (availability.isValid) {
+                        // URL доступен, сохраняем в БД
+                        const finalUrl = availability.redirected ? availability.finalUrl : url;
+                        const saved = await this.saveUrlToDB(finalUrl, this.currentDepth + 1, currentUrl, 'pending');
+
+                        if (saved) {
+                            savedCount++;
+                            this.log(`✅ URL сохранен: ${finalUrl}`, 'debug');
+                        } else {
+                            this.log(`⚠️ Не удалось сохранить URL: ${finalUrl}`, 'debug');
+                        }
+
+                        // Если был редирект, сохраняем оригинальный URL как обработанный
+                        if (availability.redirected && finalUrl !== url) {
+                            await this.saveUrlToDB(url, this.currentDepth + 1, currentUrl, 'redirect_processed');
+                        }
+
+                    } else {
+                        // URL недоступен, сохраняем с соответствующим статусом
+                        await this.saveUrlToDB(url, this.currentDepth + 1, currentUrl, `error_${availability.status}`);
+                        this.log(`❌ URL недоступен (${availability.status}): ${url}`, 'debug');
+                    }
+
+                    // Небольшая пауза между проверками
+                    await new Promise(resolve => setTimeout(resolve, 200));
+
+                } catch (error) {
+                    this.handleError(`Ошибка проверки URL ${url}`, error);
+                    // Сохраняем URL с ошибкой для возможной повторной обработки
+                    await this.saveUrlToDB(url, this.currentDepth + 1, currentUrl, 'check_error');
+                }
+            }
+
+            // Остальные URL сохраняем без проверки (будут проверены при обработке)
+            //const remainingUrls = urlsToCheck.slice(20);
+            //for (const url of remainingUrls) {
+            //const saved = await this.saveUrlToDB(url, this.currentDepth + 1, currentUrl, 'pending');
+            //if (saved) savedCount++;
+            //}
+
+            this.log(`🔗 Найдено ${foundLinks.size} уникальных ссылок`);
+            this.log(`✅ Проверено на доступность: ${checkedCount}`);
+            this.log(`💾 Сохранено в базу: ${savedCount} новых URL`);
+
+            this.totalFound += savedCount;
+        }
+
+
+        async getUrlFromDB(url) {
+            if (!this.db) return null;
+
+            try {
+                const transaction = this.db.transaction([CONFIG.CRAWLER_STORE_NAME], 'readonly');
+                const store = transaction.objectStore(CONFIG.CRAWLER_STORE_NAME);
+
+                return new Promise((resolve, reject) => {
+                    const request = store.get(url);
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => reject(request.error);
+                });
+            } catch (error) {
+                this.handleError('Ошибка получения URL из БД', error);
+                return null;
+            }
+        }
+
+
+
+        cleanUrl(url) {
+            try {
+                const urlObj = new URL(url);
+
+                // Убираем якорь
+                urlObj.hash = '';
+
+                // Убираем tracking параметры
+                const paramsToRemove = [
+                    'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
+                    'fbclid', 'gclid', 'dclid', 'msclkid', 'twclid',
+                    'ref', 'source', 'campaign', 'medium'
+                ];
+
+                paramsToRemove.forEach(param => {
+                    urlObj.searchParams.delete(param);
+                });
+
+                // Нормализуем путь (убираем двойные слеши, лишние точки)
+                let pathname = urlObj.pathname;
+                pathname = pathname.replace(/\/+/g, '/'); // заменяем множественные слеши на одинарные
+                //pathname = pathname.replace(/\/\.$/, '/'); // убираем /. в конце
+                //pathname = pathname.replace(/\/\.\//g, '/'); // убираем /./ в середине
+
+                // Если путь заканчивается на index.html, index.php и т.п. - убираем
+                // pathname = pathname.replace(/\/(index\.(html?|php)|default\.(html?|php|asp|aspx))$/i, '/');
+
+                urlObj.pathname = pathname;
+
+                return urlObj.href;
+            } catch (error) {
+                this.log(`❌ Ошибка очистки URL ${url}: ${error.message}`, 'debug');
+                return url;
+            }
+        }
+
+
+        shouldSkipUrl(url) {
+            const skipPatterns = [
+                // Файлы
+                /\.(pdf|doc|docx|xls|xlsx|ppt|pptx|zip|rar|tar|gz|7z)$/i,
+                /\.(jpg|jpeg|png|gif|svg|ico|webp|bmp|tiff?)$/i,
+                /\.(css|js|json|xml|txt|csv)$/i,
+                /\.(mp3|mp4|avi|mov|wmv|flv|webm|ogg|wav)$/i,
+                /\.(woff2?|ttf|eot|otf)$/i,
+
+                // Служебные пути
+                /\/wp-admin\//i,
+                /\/admin\//i,
+                /\/login\//i,
+                /\/logout\//i,
+                /\/register\//i,
+                /\/api\//i,
+                /\/ajax\//i,
+                /\/cgi-bin\//i,
+                /\/download\//i,
+                /\/uploads?\//i,
+                /\/assets?\//i,
+                /\/static\//i,
+                /\/media\//i,
+
+                // Протоколы
+                /^mailto:/i,
+                /^tel:/i,
+                /^fax:/i,
+                /^javascript:/i,
+                /^data:/i,
+
+                // Специальные случаи
+                /#$/,           // только якорь
+                /\?print=1/i,   // версия для печати
+                /\?pdf=1/i,     // PDF версия
+                /\/print\//i,   // страницы печати
+            ];
+
+            return skipPatterns.some(pattern => pattern.test(url));
+        }
+
+        stop() {
+            this.log('🛑 Остановка краулера...');
+            this.isRunning = false;
+            this.saveCrawlerStatus();
+
+            // Показываем статистику
+            this.showFinalStats();
+        }
+
+
+
+        async reset() {
+            // 1) остановить, если запущен
+            this.isRunning = false;
+
+            // 2) удалить IndexedDB
+            const dbDeleteReq = indexedDB.deleteDatabase(CONFIG.CRAWLER_DB_NAME);
+            dbDeleteReq.onsuccess = () => console.log('IndexedDB удалена');
+            dbDeleteReq.onerror = () => console.error('Ошибка при удалении IndexedDB');
+
+            // 3) очистить localStorage
+            localStorage.removeItem('crawlerStatus');
+
+            // 4) очистить внутренние структуры
+            this.crawledCount = 0;
+            this.errors = [];
+
+            console.log('Краулер сброшен в начальное состояние');
+        }
+
+        async showFinalStats() {
+            const allUrls = await this.getAllUrlsFromDB();
+            const completed = allUrls.filter(u => u.status === 'completed').length;
+            const pending = allUrls.filter(u => u.status === 'pending').length;
+
+            const stats = `
+🕷️ СТАТИСТИКА КРАУЛЕРА:
+━━━━━━━━━━━━━━━━━━━━━━
+📊 Всего найдено URL: ${allUrls.length}
+✅ Обработано страниц: ${completed}
+⏳ Ожидают обработки: ${pending}
+🚫 Ошибок: ${this.errors.length}
+⏱️ Сессия завершена
+            `;
+
+            this.log(stats);
+
+            // Показываем уведомление
+            if (typeof UIManager !== 'undefined') {
+                UIManager.showLargeNotification(stats, 'info', false);
+            }
+        }
+
+        async getStats() {
+            const allUrls = await this.getAllUrlsFromDB();
+            return {
+                total: allUrls.length,
+                completed: allUrls.filter(u => u.status === 'completed').length,
+                pending: allUrls.filter(u => u.status === 'pending').length,
+                errors: this.errors.length,
+                isRunning: this.isRunning
+            };
+        }
+
+        handleError(message, error) {
+            const errorInfo = {
+                message,
+                error: error.message,
+                url: window.location.href,
+                timestamp: new Date().toISOString()
+            };
+
+            this.errors.push(errorInfo);
+            this.log(`❌ ${message}: ${error.message}`, 'error');
+        }
+
+
+        async checkCurrentPageForErrors() {
+            try {
+                // Проверяем заголовок страницы на наличие ошибок
+                const title = document.title.toLowerCase();
+                const errorTitles = ['404', '403', '500', 'error', 'not found', 'access denied', 'server error'];
+
+                const hasErrorInTitle = errorTitles.some(errorText => title.includes(errorText));
+
+                if (hasErrorInTitle) {
+                    return { hasError: true, errorType: 'error_in_title' };
+                }
+
+                // Проверяем основной контент на наличие сообщений об ошибках
+                const bodyText = document.body.textContent.toLowerCase();
+                const errorMessages = [
+                    '404', '403', '500', '502', '503', '504',
+                    'not found', 'page not found', 'file not found',
+                    'access denied', 'forbidden', 'unauthorized',
+                    'internal server error', 'service unavailable',
+                    'bad gateway', 'gateway timeout'
+                ];
+
+                const hasErrorInContent = errorMessages.some(errorMsg => bodyText.includes(errorMsg));
+
+                if (hasErrorInContent) {
+                    return { hasError: true, errorType: 'error_in_content' };
+                }
+
+                // Проверяем наличие основного контента
+                const contentElements = document.querySelectorAll('main, article, .content, #content, .main');
+                const hasMainContent = contentElements.length > 0 &&
+                    Array.from(contentElements).some(el => el.textContent.trim().length > 100);
+
+                if (!hasMainContent && document.body.textContent.trim().length < 200) {
+                    return { hasError: true, errorType: 'insufficient_content' };
+                }
+
+                return { hasError: false, errorType: null };
+
+            } catch (error) {
+                this.log(`⚠️ Ошибка проверки страницы на ошибки: ${error.message}`, 'debug');
+                return { hasError: false, errorType: null };
+            }
+        }
+
+        log(message, type = 'info') {
+            const prefix = {
+                info: '🕷️',
+                success: '✅',
+                error: '❌',
+                debug: '🐛'
+            }[type] || '🕷️';
+
+            console.log(`${prefix} [SiteCrawler] ${message}`);
+        }
+    }
+
+
+
+    let crawler;
+
+
     // Start app
     function startApp() {
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', () => {
                 UnusedCSSDetector.init();
                 DOMChangeHandler.init();
+
+                (async () => { // Инициализация краулера
+                    crawler = new SiteCrawler();
+                    const initialized = await crawler.init();
+                    if (initialized) {
+                        console.log('🕷️ SiteCrawler готов к работе');
+                    } else {
+                        console.warn('⚠️ SiteCrawler не удалось инициализировать');
+                    }
+                })();
             });
         } else {
             UnusedCSSDetector.init();
             DOMChangeHandler.init();
+
+            (async () => { // Инициализация краулера
+                crawler = new SiteCrawler();
+                const initialized = await crawler.init();
+                if (initialized) {
+                    console.log('🕷️ SiteCrawler готов к работе');
+                } else {
+                    console.warn('⚠️ SiteCrawler не удалось инициализировать');
+                }
+            })();
         }
     }
 
