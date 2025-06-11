@@ -25,7 +25,7 @@
         SETTINGS_ID: 'unused-css-settings',
 
         CRAWLER_DB_NAME: 'SiteCrawlerDB',
-        CRAWLER_DB_VERSION: 13,
+        CRAWLER_DB_VERSION: 1,
         CRAWLER_STORE_NAME: 'crawled_urls',
         CRAWLER_STATUS_KEY: 'crawler_status',
         MAX_CRAWL_DEPTH: 5,
