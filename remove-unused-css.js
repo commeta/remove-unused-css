@@ -634,18 +634,7 @@
                         await crawler.stop();
                     }
 
-
-                    if (typeof crawler !== 'undefined' && crawler.isRunning) {
-                        await crawler.stop();
-                    }
-
-                    if (typeof crawler !== 'undefined') {
-                        await crawler.reset();
-                    }
-
-                    //if (typeof detector !== 'undefined' && detector.state.isRunning) {
-                        //await detector.stop();
-                    //}                    
+                    await crawler.reset();
 
                     this.showNotification('Данные успешно сброшены', 'success');
                 }
