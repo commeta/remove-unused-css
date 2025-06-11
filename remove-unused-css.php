@@ -708,28 +708,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
+// Определяем ОС
+$isWindows = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
+$lockFp = null;
+
 try {
-    // Открываем файл-блокировку и захватываем эксклюзивную блокировку
-    $lockFp = fopen(LOCK_FILE, 'c+');
-    if (!$lockFp) {
-        throw new RuntimeException('Не удалось открыть lock-файл');
+    if (!$isWindows) {
+        // UNIX-подобные системы: используем flock
+        $lockFp = fopen(LOCK_FILE, 'c+');
+        if (!$lockFp) {
+            throw new RuntimeException('Не удалось открыть lock-файл');
+        }
+        flock($lockFp, LOCK_EX);
+    } else {
+        // Windows: создаём файл-флаг, ждём удаления предыдущего
+        $start = time();
+        $timeout = 60; // секунд
+        while (file_exists(LOCK_FILE)) {
+            if (time() - $start > $timeout) {
+                // форсируем удаление старого
+                @unlink(LOCK_FILE);
+                break;
+            }
+            usleep(500000); // 0.5 секунды
+        }
+        // создаём флаг-файл
+        file_put_contents(LOCK_FILE, getmypid());
     }
-    // Блокируем до освобождения предыдущим процессом
-    flock($lockFp, LOCK_EX);
 
     // Запуск основного процесса
     $processor = new RemoveUnusedCSSProcessor();
     $processor->processRequest();
 
-    // Освобождаем блокировку
-    flock($lockFp, LOCK_UN);
-    fclose($lockFp);
-} catch (Throwable $e) {
-    // В случае критической ошибки также освобождаем файл
-    if (isset($lockFp) && is_resource($lockFp)) {
+    // Снятие блокировки
+    if (!$isWindows) {
         flock($lockFp, LOCK_UN);
         fclose($lockFp);
+    } else {
+        @unlink(LOCK_FILE);
     }
+} catch (Throwable $e) {
+    // В случае ошибки освобождаем ресурсы
+    if (!$isWindows && isset($lockFp) && is_resource($lockFp)) {
+        flock($lockFp, LOCK_UN);
+        fclose($lockFp);
+    } elseif ($isWindows) {
+        @unlink(LOCK_FILE);
+    }
+
     http_response_code(500);
     header('Content-Type: application/json; charset=utf-8');
     $response = [
