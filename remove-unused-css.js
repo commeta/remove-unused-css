@@ -2039,8 +2039,8 @@
                 maxWaitTime: 5000,         // максимально ждём появления контента
 
                 // Включить/отключить типы взаимодействий
-                enableHover: true,         // эмулировать наведение курсора
-                enableClick: true,        // эмулировать клики (false — без кликов)
+                enableHover: false,         // эмулировать наведение курсора
+                enableClick: false,        // эмулировать клики (false — без кликов)
                 enableFocus: true,         // эмулировать фокус на элементах
                 enableScroll: true,        // эмулировать прокрутку
                 enableResize: true,        // эмулировать изменение размеров окна
@@ -2050,7 +2050,7 @@
                 // Дополнительные настройки
                 simulateDeviceResize: true,    // менять viewport для разных устройств
                 triggerCustomEvents: true,     // триггерить события load, scroll, resize и др.
-                checkInvisibleElements: true,  // проверять скрытые элементы (display:none)
+                checkInvisibleElements: false,  // проверять скрытые элементы (display:none)
 
                 // Колбэки для отслеживания прогресса
                 onProgress: null,         // вызывается при каждом шаге сканирования
