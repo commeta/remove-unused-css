@@ -631,7 +631,7 @@
                     if (typeof crawler === 'undefined') {
                         return;
                     }
-                    
+
                     if (crawler.isRunning) {
                         await crawler.stop();
                     }
@@ -639,7 +639,7 @@
                     await crawler.reset();
 
                     //if (typeof detector !== 'undefined' && detector.state.isRunning) {
-                        //await detector.stop();
+                    //await detector.stop();
                     //}                    
 
                     this.showNotification('Данные успешно сброшены', 'success');
@@ -2040,7 +2040,7 @@
 
                 // Включить/отключить типы взаимодействий
                 enableHover: false,         // эмулировать наведение курсора
-                enableClick: false,        // эмулировать клики (false — без кликов)
+                enableClick: true,        // эмулировать клики (false — без кликов)
                 enableFocus: true,         // эмулировать фокус на элементах
                 enableScroll: true,        // эмулировать прокрутку
                 enableResize: true,        // эмулировать изменение размеров окна
@@ -2050,7 +2050,7 @@
                 // Дополнительные настройки
                 simulateDeviceResize: true,    // менять viewport для разных устройств
                 triggerCustomEvents: true,     // триггерить события load, scroll, resize и др.
-                checkInvisibleElements: false,  // проверять скрытые элементы (display:none)
+                checkInvisibleElements: true,  // проверять скрытые элементы (display:none)
 
                 // Колбэки для отслеживания прогресса
                 onProgress: null,         // вызывается при каждом шаге сканирования
@@ -2078,31 +2078,31 @@
                     'button', 'input', 'textarea', 'select', 'a[href]',
                     '[onclick]', '[onmouseover]', '[onmouseenter]', '[onmouseleave]',
                     '[onfocus]', '[onblur]', '[onchange]', '[onsubmit]',
-                    '[tabindex]:not([tabindex="-1"])', '[role="button"]', 
+                    '[tabindex]:not([tabindex="-1"])', '[role="button"]',
                     '[role="tab"]', '[role="menuitem"]', '[role="link"]',
                     '.btn', '.button', '.link', '.clickable'
                 ],
-                
+
                 stateful: [
                     '.active', '.selected', '.expanded', '.collapsed', '.open', '.closed',
                     '.visible', '.hidden', '.show', '.hide', '.current', '.disabled',
                     '.focus', '.hover', '.pressed', '.checked', '.loading'
                 ],
-                
+
                 components: [
                     '.modal', '.popup', '.dropdown', '.tooltip', '.accordion', '.tab',
                     '.slider', '.carousel', '.gallery', '.menu', '.navbar', '.sidebar',
                     '.overlay', '.dialog', '.panel', '.card', '.widget', '.component',
                     '.swiper', '.slick', '.owl-carousel', '.splide'
                 ],
-                
+
                 hoverable: [
-                    'a[href]', 'button', '.btn', '.button', '.link', '.hover', 
-                    '[title]', '.menu-item', '.nav-item', '.card', '.thumbnail', 
+                    'a[href]', 'button', '.btn', '.button', '.link', '.hover',
+                    '[title]', '.menu-item', '.nav-item', '.card', '.thumbnail',
                     'img[src]', '.image', '.photo', '.gallery-item',
                     '.product', '.service', '.feature'
                 ],
-                
+
                 forms: [
                     'input[type="text"]', 'input[type="email"]', 'input[type="password"]',
                     'input[type="number"]', 'input[type="tel"]', 'input[type="url"]',
@@ -2110,7 +2110,7 @@
                     'input[type="range"]', 'input[type="date"]', 'input[type="time"]',
                     'textarea', 'select', 'form', '[contenteditable="true"]'
                 ],
-                
+
                 media: [
                     'video', 'audio', 'iframe', 'object', 'embed',
                     '.video-player', '.audio-player', '.media-container',
@@ -2130,55 +2130,64 @@
         // Метод для блокировки навигации
         blockNavigation() {
             if (this.isNavigationBlocked) return;
-
             this.isNavigationBlocked = true;
             this.log("🛡️ Блокировка навигации активирована");
 
-            // Блокируем события на document
-            const eventsToBlock = ['beforeunload', 'unload', 'pagehide'];
-            eventsToBlock.forEach(eventType => {
+            // Блокируем события выгрузки страницы
+            const unloadEvents = ['beforeunload', 'unload', 'pagehide'];
+            unloadEvents.forEach(eventType => {
                 const handler = (e) => {
                     e.preventDefault();
                     e.stopImmediatePropagation();
-                    return false;
+                    e.returnValue = '';
+                    return '';
                 };
-                document.addEventListener(eventType, handler, true);
-                this.originalHandlers.set(eventType, handler);
+                window.addEventListener(eventType, handler, { capture: true, passive: false });
+                this.originalHandlers.set(`window_${eventType}`, handler);
             });
 
             // Блокируем отправку форм
-            document.addEventListener('submit', (e) => {
+            const formHandler = (e) => {
                 e.preventDefault();
                 e.stopImmediatePropagation();
                 this.log("🚫 Заблокирована отправка формы");
                 return false;
-            }, true);
+            };
+            document.addEventListener('submit', formHandler, { capture: true, passive: false });
+            this.originalHandlers.set('submit', formHandler);
 
-            // Перехватываем clicks на ссылках
-            document.addEventListener('click', (e) => {
-                const target = e.target.closest('a');
+            // Улучшенная блокировка ссылок
+            const linkHandler = (e) => {
+                const target = e.target.closest('a[href], area[href]');
                 if (target && target.href) {
-                    // Проверяем тип ссылки
                     const href = target.href.toLowerCase();
-                    const isExternal = href.startsWith('http') && !href.includes(window.location.hostname);
-                    const isJavaScript = href.startsWith('javascript:');
-                    const isAnchor = href.includes('#') && href.split('#')[0] === window.location.href.split('#')[0];
-                    const isMailto = href.startsWith('mailto:');
-                    const isTel = href.startsWith('tel:');
+                    const currentOrigin = window.location.origin.toLowerCase();
 
-                    // Разрешаем только якоря на текущей странице
-                    if (!isAnchor && !isJavaScript && !isMailto && !isTel) {
+                    // Разрешаем только якорные ссылки на той же странице
+                    const isAnchor = href.includes('#') &&
+                        (href.startsWith('#') || href.startsWith(currentOrigin + window.location.pathname + '#'));
+
+                    // Разрешаем javascript: void(0) и подобные
+                    const isSafeJavaScript = href.startsWith('javascript:') &&
+                        (href.includes('void(0)') || href.includes('return false'));
+
+                    // Разрешаем специальные протоколы
+                    const isSpecialProtocol = href.startsWith('mailto:') || href.startsWith('tel:') || href.startsWith('sms:');
+
+                    if (!isAnchor && !isSafeJavaScript && !isSpecialProtocol) {
                         e.preventDefault();
                         e.stopImmediatePropagation();
-                        this.log(`🚫 Заблокирован переход по ссылке: ${target.href}`);
+                        this.log(`🚫 Заблокирован переход: ${target.href}`);
                         return false;
                     }
                 }
-            }, true);
+            };
+            document.addEventListener('click', linkHandler, { capture: true, passive: false });
+            this.originalHandlers.set('click', linkHandler);
 
-            // Блокируем изменение location
-            const originalPushState = history.pushState;
-            const originalReplaceState = history.replaceState;
+            // Блокируем изменения истории
+            const originalPushState = history.pushState.bind(history);
+            const originalReplaceState = history.replaceState.bind(history);
 
             history.pushState = function () {
                 console.log("🚫 Заблокирован pushState");
@@ -2192,22 +2201,38 @@
 
             this.originalHandlers.set('pushState', originalPushState);
             this.originalHandlers.set('replaceState', originalReplaceState);
+
+            // Блокируем window.open
+            const originalWindowOpen = window.open.bind(window);
+            window.open = function () {
+                console.log("🚫 Заблокирован window.open");
+                return null;
+            };
+            this.originalHandlers.set('windowOpen', originalWindowOpen);
         }
+
 
         // Метод для разблокировки навигации
         unblockNavigation() {
             if (!this.isNavigationBlocked) return;
-
             this.log("🔓 Разблокировка навигации");
 
-            // Восстанавливаем оригинальные обработчики
-            this.originalHandlers.forEach((handler, eventType) => {
-                if (eventType === 'pushState') {
-                    history.pushState = handler;
-                } else if (eventType === 'replaceState') {
-                    history.replaceState = handler;
-                } else {
-                    document.removeEventListener(eventType, handler, true);
+            this.originalHandlers.forEach((handler, key) => {
+                try {
+                    if (key === 'pushState') {
+                        history.pushState = handler;
+                    } else if (key === 'replaceState') {
+                        history.replaceState = handler;
+                    } else if (key === 'windowOpen') {
+                        window.open = handler;
+                    } else if (key.startsWith('window_')) {
+                        const eventType = key.replace('window_', '');
+                        window.removeEventListener(eventType, handler, { capture: true });
+                    } else {
+                        document.removeEventListener(key, handler, { capture: true });
+                    }
+                } catch (error) {
+                    console.warn(`Ошибка при разблокировке ${key}:`, error);
                 }
             });
 
@@ -2221,40 +2246,56 @@
 
             const tagName = element.tagName.toLowerCase();
             const type = element.type?.toLowerCase();
+            const href = element.href;
 
             try {
-                // Для ссылок - только эмуляция без перехода
-                if (tagName === 'a') {
+                // Проверяем на деструктивные элементы
+                if (this.isDestructiveElement(element)) {
                     this.simulateVisualClick(element);
                     return true;
                 }
 
-                // Для форм - предотвращаем отправку
-                if (tagName === 'form' || type === 'submit') {
-                    this.simulateVisualClick(element);
-                    return true;
+                // Специальная обработка ссылок
+                if (tagName === 'a' && href) {
+                    const isNavigation = this.isNavigationLink(href);
+                    if (isNavigation) {
+                        this.log(`🚫 Пропущена навигационная ссылка: ${href}`);
+                        this.simulateVisualClick(element);
+                        return true;
+                    }
                 }
 
-                // Для кнопок - безопасный клик
+                // Безопасные кнопки
                 if (tagName === 'button' || type === 'button') {
-                    // Проверяем на деструктивные действия
-                    if (this.isDestructiveElement(element)) {
+                    // Проверяем атрибуты формы
+                    if (element.form && (element.type === 'submit' || element.getAttribute('type') === 'submit')) {
                         this.simulateVisualClick(element);
                         return true;
                     }
 
-                    // Безопасный клик для обычных кнопок
+                    // Обычные кнопки - безопасно кликаем
                     const clickEvent = new MouseEvent('click', {
                         bubbles: true,
                         cancelable: true,
                         view: window
                     });
-
                     element.dispatchEvent(clickEvent);
                     return true;
                 }
 
-                // Для других элементов
+                // Элементы форм
+                if (['input', 'select', 'textarea'].includes(tagName)) {
+                    if (type === 'submit' || type === 'reset') {
+                        this.simulateVisualClick(element);
+                        return true;
+                    }
+
+                    // Обычные поля ввода - только фокус
+                    this.simulateFocus(element);
+                    return true;
+                }
+
+                // Все остальные элементы - визуальная симуляция
                 this.simulateVisualClick(element);
                 return true;
 
@@ -2262,6 +2303,59 @@
                 this.handleError('Ошибка безопасного клика', error, element);
                 return false;
             }
+        }
+
+        simulateFocus(element) {
+            if (!element) return;
+
+            try {
+                // Событие фокуса
+                element.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
+
+                // Визуальное выделение
+                const originalOutline = element.style.outline;
+                element.style.outline = '2px solid #007bff';
+
+                setTimeout(() => {
+                    // Событие потери фокуса
+                    element.dispatchEvent(new FocusEvent('blur', { bubbles: true }));
+                    element.style.outline = originalOutline;
+                }, 200);
+
+                this.state.processedElements.add(element);
+            } catch (error) {
+                this.handleError('Ошибка симуляции фокуса', error, element);
+            }
+        }
+
+        isNavigationLink(href) {
+            if (!href) return false;
+
+            const url = href.toLowerCase();
+            const currentOrigin = window.location.origin.toLowerCase();
+            const currentPath = window.location.pathname;
+
+            // Якорные ссылки на той же странице - безопасны
+            const isCurrentPageAnchor = url.includes('#') &&
+                (url.startsWith('#') || url.startsWith(currentOrigin + currentPath + '#'));
+
+            // Специальные протоколы - безопасны
+            const isSpecialProtocol = url.startsWith('mailto:') ||
+                url.startsWith('tel:') ||
+                url.startsWith('sms:') ||
+                url.startsWith('skype:');
+
+            // JavaScript void - безопасны
+            const isSafeJS = url.startsWith('javascript:') &&
+                (url.includes('void(0)') || url.includes('return false') || url === 'javascript:;');
+
+            // Если это безопасные ссылки - не навигация
+            if (isCurrentPageAnchor || isSpecialProtocol || isSafeJS) {
+                return false;
+            }
+
+            // Все остальные HTTP(S) ссылки считаем навигационными
+            return url.startsWith('http') || url.startsWith('/') || url.startsWith('../');
         }
 
         // Визуальная симуляция клика без реального выполнения
@@ -2358,11 +2452,11 @@
                 { name: 'Триггер кастомных событий', method: 'triggerCustomEvents' },
                 { name: 'Финальная проверка', method: 'finalCheck' }
             ];
-            
+
             for (let i = 0; i < steps.length; i++) {
                 const step = steps[i];
                 this.updateProgress(step.name, (i / steps.length) * 100);
-                
+
                 try {
                     await this[step.method]();
                     await this.delay(this.options.observerDelay);
@@ -2426,29 +2520,29 @@
          */
         async triggerHoverEffects() {
             if (!this.options.enableHover) return;
-            
+
             const hoverElements = this.getAllElements(this.selectors.hoverable);
             this.log(`🖱️ Улучшенная обработка ${hoverElements.length} hover элементов`);
-            
+
             for (const element of hoverElements) {
                 if (!this.isElementInteractable(element)) continue;
-                
+
                 try {
                     // 1. Стандартные mouse события с координатами
                     this.dispatchMouseEvent(element, 'mouseenter');
                     this.dispatchMouseEvent(element, 'mouseover');
-                    
+
                     // 2. Принудительная активация hover CSS
                     this.forceHoverStates(element);
-                    
+
                     await this.delay(this.options.mouseDelay);
-                    
+
                     // 3. Выход из hover
                     this.dispatchMouseEvent(element, 'mouseleave');
                     this.dispatchMouseEvent(element, 'mouseout');
-                    
+
                     this.state.processedElements.add(element);
-                    
+
                 } catch (error) {
                     this.handleError(`Ошибка улучшенного hover для элемента`, error, element);
                 }
@@ -2795,19 +2889,19 @@
                 '[data-carousel]', '[data-slider]', '[data-swiper]',
                 '.gallery', '.image-slider', '.product-slider'
             ];
-            
+
             const carousels = this.getAllElements(carouselSelectors);
             this.log(`🎠 Обработка ${carousels.length} каруселей`);
-            
+
             for (const carousel of carousels) {
                 if (!this.isElementInteractable(carousel)) continue;
-                
+
                 try {
                     // Ищем кнопки навигации
                     const navButtons = carousel.querySelectorAll(
                         '.prev, .next, .arrow, [data-slide], .carousel-control, .slick-arrow'
                     );
-                    
+
                     // Кликаем по кнопкам навигации
                     for (const button of navButtons) {
                         if (this.isElementInteractable(button)) {
@@ -2815,25 +2909,25 @@
                             await this.delay(this.options.clickDelay);
                         }
                     }
-                    
+
                     // Симулируем свайп жесты
                     this.simulateSwipeGestures(carousel);
                     await this.delay(this.options.scrollDelay);
-                    
+
                     // Ищем индикаторы/точки
                     const indicators = carousel.querySelectorAll(
                         '.indicator, .dot, .bullet, [data-slide-to], .carousel-indicators li'
                     );
-                    
+
                     for (const indicator of Array.from(indicators).slice(0, 3)) { // Ограничиваем до 3
                         if (this.isElementInteractable(indicator)) {
                             this.safeClick(indicator);
                             await this.delay(this.options.clickDelay);
                         }
                     }
-                    
+
                     this.state.processedElements.add(carousel);
-                    
+
                 } catch (error) {
                     this.handleError(`Ошибка обработки карусели`, error, carousel);
                 }
@@ -2868,22 +2962,42 @@
         isDestructiveElement(element) {
             if (!element) return true;
 
+            // Расширенный список деструктивных селекторов
             const destructiveSelectors = [
+                // Формы и кнопки отправки
                 '[type="submit"]',
                 'input[type="submit"]',
                 'button[type="submit"]',
-                '.delete', '.remove', '.destroy',
-                '.logout', '.signout', '.exit',
-                '.cancel', '.close', '.dismiss',
+                'form button:not([type])', // кнопки в формах без типа (по умолчанию submit)
+
+                // Деструктивные действия
+                '.delete', '.remove', '.destroy', '.clear',
+                '.logout', '.signout', '.sign-out', '.exit',
+                '.cancel', '.close', '.dismiss', '.reject',
+                '.unsubscribe', '.disable', '.deactivate',
+
+                // Ссылки с деструктивными действиями
                 'a[href*="delete"]', 'a[href*="remove"]',
-                'a[href*="logout"]', 'a[href*="exit"]',
-                'button[onclick*="delete"]',
-                'button[onclick*="remove"]',
-                '[data-action*="delete"]',
-                '[data-action*="remove"]'
+                'a[href*="logout"]', 'a[href*="signout"]',
+                'a[href*="exit"]', 'a[href*="unsubscribe"]',
+                'a[href*="cancel"]', 'a[href*="destroy"]',
+
+                // JavaScript обработчики
+                '[onclick*="delete"]', '[onclick*="remove"]',
+                '[onclick*="destroy"]', '[onclick*="logout"]',
+                '[onclick*="submit"]', '[onclick*="window.open"]',
+
+                // Дата-атрибуты
+                '[data-action*="delete"]', '[data-action*="remove"]',
+                '[data-action*="destroy"]', '[data-action*="logout"]',
+                '[data-action*="submit"]', '[data-method="delete"]',
+
+                // Специальные роли
+                '[role="button"][aria-label*="delete"]',
+                '[role="button"][aria-label*="remove"]'
             ];
 
-            // Проверяем по селекторам
+            // Проверяем селекторы
             const matchesDestructive = destructiveSelectors.some(selector => {
                 try {
                     return element.matches(selector);
@@ -2895,10 +3009,27 @@
             if (matchesDestructive) return true;
 
             // Проверяем текстовое содержимое
-            const text = (element.textContent || element.value || '').toLowerCase();
-            const destructiveWords = ['delete', 'remove', 'destroy', 'logout', 'sign out', 'exit', 'cancel', 'close'];
+            const text = (element.textContent || element.value || element.title || element.alt || '').toLowerCase().trim();
+            const destructiveWords = [
+                'delete', 'remove', 'destroy', 'clear', 'reset',
+                'logout', 'log out', 'sign out', 'signout', 'exit',
+                'cancel', 'close', 'dismiss', 'reject', 'decline',
+                'unsubscribe', 'disable', 'deactivate', 'suspend',
+                'submit', 'send', 'post', 'save', 'update',
+                'buy', 'purchase', 'order', 'checkout', 'pay',
+                'download', 'install', 'upgrade'
+            ];
 
-            return destructiveWords.some(word => text.includes(word));
+            const hasDestructiveText = destructiveWords.some(word => {
+                return text === word || text.startsWith(word + ' ') || text.endsWith(' ' + word) || text.includes(' ' + word + ' ');
+            });
+
+            // Проверяем href на навигацию
+            if (element.href && this.isNavigationLink(element.href)) {
+                return true;
+            }
+
+            return hasDestructiveText;
         }
 
         stop() {
@@ -2932,13 +3063,13 @@
 
         dispatchMouseEvent(element, eventType) {
             if (!element) return;
-            
+
             const rect = element.getBoundingClientRect();
             const center = {
                 x: rect.left + rect.width / 2,
                 y: rect.top + rect.height / 2
             };
-            
+
             // Создаем событие с реальными координатами
             const event = new MouseEvent(eventType, {
                 clientX: center.x,
@@ -2950,29 +3081,29 @@
                 view: window,
                 detail: eventType === 'click' ? 1 : 0
             });
-            
+
             element.dispatchEvent(event);
-            
+
             // Дополнительно: пытаемся активировать CSS hover через focus/blur
             if (eventType === 'mouseenter' && element.focus) {
                 try {
                     element.focus();
                     setTimeout(() => element.blur(), 100);
-                } catch (e) {}
+                } catch (e) { }
             }
         }
 
         forceHoverStates(element) {
             if (!element) return;
-            
+
             // Создаем временный CSS для принудительной активации hover
             const testId = 'hover-test-' + Date.now();
             const style = document.createElement('style');
-            
+
             // Получаем все CSS правила для этого элемента
             const computedStyle = window.getComputedStyle(element);
             const elementSelectors = this.getElementSelectors(element);
-            
+
             // Создаем CSS правила для принудительного hover
             let hoverCSS = '';
             elementSelectors.forEach(selector => {
@@ -2983,13 +3114,13 @@
                     }
                 `;
             });
-            
+
             style.textContent = hoverCSS;
             document.head.appendChild(style);
-            
+
             // Применяем класс
             element.classList.add(testId);
-            
+
             // Удаляем через короткий промежуток
             setTimeout(() => {
                 element.classList.remove(testId);
@@ -2999,37 +3130,37 @@
 
         getElementSelectors(element) {
             const selectors = [];
-            
+
             // ID селектор
             if (element.id) {
                 selectors.push('#' + element.id);
             }
-            
+
             // Class селекторы
             if (element.classList.length > 0) {
                 const classSelector = '.' + Array.from(element.classList).join('.');
                 selectors.push(classSelector);
             }
-            
+
             // Tag селектор
             selectors.push(element.tagName.toLowerCase());
-            
+
             return selectors;
         }
 
         simulateSwipeGestures(element) {
             if (!element) return;
-            
+
             const rect = element.getBoundingClientRect();
             const centerY = rect.top + rect.height / 2;
-            
+
             // Симулируем свайп влево
             this.performSwipe(element, {
                 startX: rect.left + rect.width * 0.8,
                 endX: rect.left + rect.width * 0.2,
                 y: centerY
             });
-            
+
             // Пауза между жестами
             setTimeout(() => {
                 // Симулируем свайп вправо
@@ -3053,7 +3184,7 @@
                     bubbles: true,
                     cancelable: true
                 });
-                
+
                 const touchMove = new TouchEvent('touchmove', {
                     touches: [{
                         clientX: (coords.startX + coords.endX) / 2,
@@ -3063,7 +3194,7 @@
                     bubbles: true,
                     cancelable: true
                 });
-                
+
                 const touchEnd = new TouchEvent('touchend', {
                     changedTouches: [{
                         clientX: coords.endX,
@@ -3073,11 +3204,11 @@
                     bubbles: true,
                     cancelable: true
                 });
-                
+
                 element.dispatchEvent(touchStart);
                 setTimeout(() => element.dispatchEvent(touchMove), 50);
                 setTimeout(() => element.dispatchEvent(touchEnd), 150);
-                
+
             } catch (error) {
                 // Fallback: используем обычные mouse события для drag
                 this.simulateDragGesture(element, coords);
@@ -3092,21 +3223,21 @@
                 bubbles: true,
                 cancelable: true
             });
-            
+
             const mouseMove = new MouseEvent('mousemove', {
                 clientX: coords.endX,
                 clientY: coords.y,
                 bubbles: true,
                 cancelable: true
             });
-            
+
             const mouseUp = new MouseEvent('mouseup', {
                 clientX: coords.endX,
                 clientY: coords.y,
                 bubbles: true,
                 cancelable: true
             });
-            
+
             element.dispatchEvent(mouseDown);
             setTimeout(() => element.dispatchEvent(mouseMove), 50);
             setTimeout(() => element.dispatchEvent(mouseUp), 150);
