@@ -30,12 +30,16 @@
         CRAWLER_STATUS_KEY: 'crawler_status',
         MAX_CRAWL_DEPTH: 5,
         CRAWL_DELAY: 3000,
-        MAX_URLS_PER_SESSION: 100
+        MAX_URLS_PER_SESSION: 100,
 
+        TAB_HEARTBEAT_INTERVAL: 5000,
+        URL_LEASE_TIMEOUT: 30000,
+        MAX_RETRY_COUNT: 3,
+        BATCH_SIZE: 5,
+        SYNC_CHANNEL: 'sitecrawler_sync',
+        TAB_STORE_NAME: 'active_tabs',
+        LOCK_STORE_NAME: 'url_locks'
     };
-
-
-
 
     // Состояние приложения: хранит данные для анализа и настройки очистки CSS
     let state = {
@@ -88,8 +92,6 @@
             logical_selectors: true    // флаг сохранения логических селекторов (:not(), :is(), :has())
         }
     };
-
-
 
     // CSS Utilities
     class CSSUtils {
@@ -965,6 +967,206 @@
     }
 
 
+    class TabSyncManager {
+        constructor(crawler) {
+            this.crawler = crawler;
+            this.tabId = 'tab_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            this.heartbeatInterval = null;
+            this.syncChannel = null;
+            this.isActive = false;
+            this.processedBatch = new Set();
+        }
+
+        async init() {
+            try {
+                this.syncChannel = new BroadcastChannel(CONFIG.SYNC_CHANNEL);
+                this.syncChannel.onmessage = (e) => this.handleSyncMessage(e);
+                await this.registerTab();
+                this.startHeartbeat();
+                this.isActive = true;
+                this.crawler.log(`🔄 TabSync инициализирован: ${this.tabId}`, 'info');
+                return true;
+            } catch (error) {
+                this.crawler.log(`❌ Ошибка инициализации TabSync: ${error.message}`, 'error');
+                return false;
+            }
+        }
+
+        async registerTab() {
+            if (!this.crawler.db) return;
+            const transaction = this.crawler.db.transaction([CONFIG.TAB_STORE_NAME], 'readwrite');
+            const store = transaction.objectStore(CONFIG.TAB_STORE_NAME);
+            const tabData = {
+                id: this.tabId,
+                url: window.location.href,
+                lastHeartbeat: Date.now(),
+                status: 'active',
+                processedCount: 0
+            };
+            store.put(tabData);
+        }
+
+        startHeartbeat() {
+            this.heartbeatInterval = setInterval(async () => {
+                if (!this.isActive) return;
+                try {
+                    await this.updateHeartbeat();
+                    await this.cleanupDeadTabs();
+                    await this.redistributeStuckUrls();
+                } catch (error) {
+                    this.crawler.log(`❌ Ошибка heartbeat: ${error.message}`, 'error');
+                }
+            }, CONFIG.TAB_HEARTBEAT_INTERVAL);
+        }
+
+        async updateHeartbeat() {
+            if (!this.crawler.db) return;
+            const transaction = this.crawler.db.transaction([CONFIG.TAB_STORE_NAME], 'readwrite');
+            const store = transaction.objectStore(CONFIG.TAB_STORE_NAME);
+            const tabData = {
+                id: this.tabId,
+                url: window.location.href,
+                lastHeartbeat: Date.now(),
+                status: 'active',
+                processedCount: this.processedBatch.size
+            };
+            store.put(tabData);
+        }
+
+        async cleanupDeadTabs() {
+            if (!this.crawler.db) return;
+            const now = Date.now();
+            const transaction = this.crawler.db.transaction([CONFIG.TAB_STORE_NAME], 'readwrite');
+            const store = transaction.objectStore(CONFIG.TAB_STORE_NAME);
+            const request = store.getAll();
+            request.onsuccess = () => {
+                const tabs = request.result;
+                tabs.forEach(tab => {
+                    if (now - tab.lastHeartbeat > CONFIG.TAB_HEARTBEAT_INTERVAL * 3) {
+                        store.delete(tab.id);
+                        this.broadcastSync('tab_cleanup', { tabId: tab.id });
+                    }
+                });
+            };
+        }
+
+        async redistributeStuckUrls() {
+            if (!this.crawler.db) return;
+            const now = Date.now();
+            const transaction = this.crawler.db.transaction([CONFIG.CRAWLER_STORE_NAME], 'readwrite');
+            const store = transaction.objectStore(CONFIG.CRAWLER_STORE_NAME);
+            const request = store.getAll();
+            request.onsuccess = () => {
+                const urls = request.result;
+                urls.forEach(urlData => {
+                    if (urlData.status === 'processing' && urlData.lockedAt && now - urlData.lockedAt > CONFIG.URL_LEASE_TIMEOUT) {
+                        urlData.status = 'pending';
+                        urlData.lockedBy = null;
+                        urlData.lockedAt = null;
+                        urlData.retryCount = (urlData.retryCount || 0) + 1;
+                        if (urlData.retryCount > CONFIG.MAX_RETRY_COUNT) {
+                            urlData.status = 'failed_max_retries';
+                        } else {
+                            store.put(urlData);
+                            this.broadcastSync('url_redistributed', { url: urlData.url });
+                        }
+                    }
+                });
+            };
+        }
+
+        async acquireUrlLock(url) {
+            if (!this.crawler.db) return false;
+            const transaction = this.crawler.db.transaction([CONFIG.CRAWLER_STORE_NAME], 'readwrite');
+            const store = transaction.objectStore(CONFIG.CRAWLER_STORE_NAME);
+            return new Promise((resolve) => {
+                const request = store.get(url);
+                request.onsuccess = () => {
+                    const urlData = request.result;
+                    if (!urlData || urlData.status !== 'pending') {
+                        resolve(false);
+                        return;
+                    }
+                    urlData.status = 'processing';
+                    urlData.lockedBy = this.tabId;
+                    urlData.lockedAt = Date.now();
+                    store.put(urlData);
+                    resolve(true);
+                };
+                request.onerror = () => resolve(false);
+            });
+        }
+
+        async releaseUrlLock(url, status = 'completed') {
+            if (!this.crawler.db) return;
+            const transaction = this.crawler.db.transaction([CONFIG.CRAWLER_STORE_NAME], 'readwrite');
+            const store = transaction.objectStore(CONFIG.CRAWLER_STORE_NAME);
+            const request = store.get(url);
+            request.onsuccess = () => {
+                const urlData = request.result;
+                if (urlData && urlData.lockedBy === this.tabId) {
+                    urlData.status = status;
+                    urlData.lockedBy = null;
+                    urlData.lockedAt = null;
+                    urlData.completedAt = Date.now();
+                    store.put(urlData);
+                    this.broadcastSync('url_completed', { url, status });
+                }
+            };
+        }
+
+        async getNextBatch() {
+            if (!this.crawler.db) return [];
+            const transaction = this.crawler.db.transaction([CONFIG.CRAWLER_STORE_NAME], 'readonly');
+            const store = transaction.objectStore(CONFIG.CRAWLER_STORE_NAME);
+            return new Promise((resolve) => {
+                const request = store.getAll();
+                request.onsuccess = () => {
+                    const allUrls = request.result;
+                    const pendingUrls = allUrls.filter(u => u.status === 'pending').slice(0, CONFIG.BATCH_SIZE);
+                    resolve(pendingUrls);
+                };
+                request.onerror = () => resolve([]);
+            });
+        }
+
+        broadcastSync(type, data) {
+            if (this.syncChannel) {
+                this.syncChannel.postMessage({ type, data, from: this.tabId, timestamp: Date.now() });
+            }
+        }
+
+        handleSyncMessage(event) {
+            const { type, data, from } = event.data;
+            if (from === this.tabId) return;
+            switch (type) {
+                case 'url_completed':
+                    this.crawler.log(`📢 URL завершен другой вкладкой: ${data.url}`, 'debug');
+                    break;
+                case 'url_redistributed':
+                    this.crawler.log(`📢 URL перераспределен: ${data.url}`, 'debug');
+                    break;
+                case 'tab_cleanup':
+                    this.crawler.log(`📢 Очистка мертвой вкладки: ${data.tabId}`, 'debug');
+                    break;
+            }
+        }
+
+        async destroy() {
+            this.isActive = false;
+            if (this.heartbeatInterval) {
+                clearInterval(this.heartbeatInterval);
+            }
+            if (this.syncChannel) {
+                this.syncChannel.close();
+            }
+            if (this.crawler.db) {
+                const transaction = this.crawler.db.transaction([CONFIG.TAB_STORE_NAME], 'readwrite');
+                const store = transaction.objectStore(CONFIG.TAB_STORE_NAME);
+                store.delete(this.tabId);
+            }
+        }
+    }
 
     class SiteCrawler {
         constructor() {
@@ -979,6 +1181,10 @@
             this.processedUrls = new Set();
             this.errors = [];
             this.baseUrl = window.location.origin;
+
+            this.tabSync = null;
+            this.currentBatch = [];
+            this.batchIndex = 0;
         }
 
 
@@ -1078,37 +1284,47 @@
 
         async init() {
             try {
-                await this.initIndexedDB();
+                await this.initDB();
+                this.tabSync = new TabSyncManager(this);
+                const syncInitialized = await this.tabSync.init();
+                if (!syncInitialized) {
+                    this.log('⚠️ TabSync не инициализирован, работаем в одиночном режиме', 'warning');
+                }
+                const currentUrl = this.cleanUrl(window.location.href);
+                const existing = await this.getUrlFromDB(currentUrl);
+                if (!existing) {
+                    await this.saveUrlToDB(currentUrl, 0, null, 'completed');
+                    this.log(`✅ Текущий URL сохранен: ${currentUrl}`);
+                }
                 await this.loadCrawlerStatus();
-                this.log('🕷️ Crawler инициализирован');
+                this.log('🕷️ SiteCrawler инициализирован');
                 return true;
             } catch (error) {
-                this.handleError('Ошибка инициализации Crawler', error);
+                this.handleError('Ошибка инициализации краулера', error);
                 return false;
             }
         }
 
-        async initIndexedDB() {
+        async initDB() {
             return new Promise((resolve, reject) => {
                 const request = indexedDB.open(CONFIG.CRAWLER_DB_NAME, CONFIG.CRAWLER_DB_VERSION);
-
                 request.onerror = () => reject(request.error);
                 request.onsuccess = () => {
                     this.db = request.result;
                     resolve();
                 };
-
                 request.onupgradeneeded = (event) => {
                     const db = event.target.result;
-
-                    // Создаем хранилище для URL-ов
                     if (!db.objectStoreNames.contains(CONFIG.CRAWLER_STORE_NAME)) {
-                        const store = db.createObjectStore(CONFIG.CRAWLER_STORE_NAME, {
-                            keyPath: 'url'
-                        });
-                        store.createIndex('status', 'status', { unique: false });
-                        store.createIndex('depth', 'depth', { unique: false });
-                        store.createIndex('foundOn', 'foundOn', { unique: false });
+                        const urlStore = db.createObjectStore(CONFIG.CRAWLER_STORE_NAME, { keyPath: 'url' });
+                        urlStore.createIndex('status', 'status', { unique: false });
+                        urlStore.createIndex('depth', 'depth', { unique: false });
+                    }
+                    if (!db.objectStoreNames.contains(CONFIG.TAB_STORE_NAME)) {
+                        db.createObjectStore(CONFIG.TAB_STORE_NAME, { keyPath: 'id' });
+                    }
+                    if (!db.objectStoreNames.contains(CONFIG.LOCK_STORE_NAME)) {
+                        db.createObjectStore(CONFIG.LOCK_STORE_NAME, { keyPath: 'url' });
                     }
                 };
             });
@@ -1259,45 +1475,36 @@
                 this.log('⚠️ Краулер уже запущен');
                 return;
             }
-
-            this.log('🚀 Запуск краулера сайта...');
             this.isRunning = true;
-            this.crawledCount = 0;
-            this.currentDepth = 0;
-            this.saveCrawlerStatus();
-
+            this.log('🚀 Запуск мультивкладочного краулера...');
             try {
-                // Обрабатываем текущую страницу СРАЗУ, не добавляя в очередь
-                this.log('🔍 Обработка стартовой страницы...');
-                await this.discoverLinksOnCurrentPage();
-
-
-                if (typeof detector !== 'undefined') {
-                    this.log('🤖 Запуск детектора на стартовой странице...');
-                    await new Promise(resolve => {
-                        const originalOnComplete = detector.options.onComplete;
-                        detector.options.onComplete = (results) => {
-                            if (originalOnComplete) originalOnComplete(results);
-                            resolve();
-                        };
-                        detector.start();
-                    });
-                    this.log('✅ Детектор завершил работу на стартовой странице');
+                await this.processCurrentPage();
+                while (this.isRunning) {
+                    const batch = await this.tabSync.getNextBatch();
+                    if (batch.length === 0) {
+                        this.log('📭 Нет URL для обработки, ожидание...');
+                        await new Promise(resolve => setTimeout(resolve, CONFIG.CHECK_INTERVAL));
+                        continue;
+                    }
+                    this.currentBatch = batch;
+                    this.batchIndex = 0;
+                    for (const urlData of batch) {
+                        if (!this.isRunning) break;
+                        const acquired = await this.tabSync.acquireUrlLock(urlData.url);
+                        if (acquired) {
+                            await this.processUrl(urlData);
+                        }
+                        this.batchIndex++;
+                    }
+                    await new Promise(resolve => setTimeout(resolve, CONFIG.CRAWL_DELAY));
                 }
-
-
-                // Помечаем текущую страницу как обработанную
-                const currentUrl = this.cleanUrl(window.location.href);
-                await this.markUrlAsProcessed(currentUrl, 'completed');
-                this.crawledCount++;
-                this.saveCrawlerStatus();
-
-                // Продолжаем краулинг с найденными ссылками
-                await this.continueCrawling();
-
             } catch (error) {
-                this.handleError('Ошибка запуска краулера', error);
-                this.stop();
+                this.handleError('Ошибка работы краулера', error);
+            } finally {
+                this.isRunning = false;
+                if (this.tabSync) {
+                    await this.tabSync.destroy();
+                }
             }
         }
 
@@ -1390,50 +1597,27 @@
 
 
         async processCurrentPage() {
-            this.log('🔍 Обработка текущей страницы...');
-
             try {
                 const currentUrl = this.cleanUrl(window.location.href);
-
-                // Проверяем страницу на ошибки
-                /*
-                const pageCheck = await this.checkCurrentPageForErrors();
-                if (pageCheck.hasError) {
-                    this.log(`❌ Обнаружена ошибка на странице: ${pageCheck.errorType}`);
-                    await this.markUrlAsProcessed(currentUrl, `page_error_${pageCheck.errorType}`);
-                    this.crawledCount++;
-                    this.saveCrawlerStatus();
-                    return;
-                }
-                */
-
-                // Помечаем URL как обрабатываемый
+                this.log(`🔍 Обработка текущей страницы: ${currentUrl}`);
                 await this.markUrlAsProcessed(currentUrl, 'processing');
-
-                // Ищем ссылки на странице
                 await this.discoverLinksOnCurrentPage();
 
-                // Запускаем детектор, если доступен
+                // Запуск DynamicContentDetector
                 if (typeof detector !== 'undefined') {
                     this.log('🤖 Запуск динамического детектора...');
-
                     return new Promise((resolve) => {
                         const originalOnComplete = detector.options.onComplete;
-
                         detector.options.onComplete = (results) => {
                             this.log('✅ Детектор завершил работу', results);
-
                             if (originalOnComplete) {
                                 originalOnComplete(results);
                             }
-
-                            // Помечаем как успешно обработанный
                             this.markUrlAsProcessed(currentUrl, 'completed');
                             this.crawledCount++;
                             this.saveCrawlerStatus();
                             resolve();
                         };
-
                         detector.start();
                     });
                 } else {
@@ -1442,13 +1626,56 @@
                     this.crawledCount++;
                     this.saveCrawlerStatus();
                 }
-
             } catch (error) {
                 this.handleError('Ошибка обработки текущей страницы', error);
                 const currentUrl = this.cleanUrl(window.location.href);
                 await this.markUrlAsProcessed(currentUrl, 'processing_error');
                 this.crawledCount++;
                 this.saveCrawlerStatus();
+            }
+        }
+
+
+        async processUrl(urlData) {
+            const { url } = urlData;
+            this.log(`🌐 Переход на URL: ${url}`);
+            try {
+                const originalUrl = window.location.href;
+                window.location.href = url;
+                await new Promise(resolve => {
+                    const checkLoad = () => {
+                        if (window.location.href === url && document.readyState === 'complete') {
+                            resolve();
+                        } else {
+                            setTimeout(checkLoad, 500);
+                        }
+                    };
+                    checkLoad();
+                });
+
+                // Запуск DynamicContentDetector
+                if (typeof detector !== 'undefined') {
+                    this.log('🤖 Запуск детектора на новой странице...');
+                    await new Promise((resolve) => {
+                        const originalOnComplete = detector.options.onComplete;
+                        detector.options.onComplete = (results) => {
+                            this.log('✅ Детектор завершил работу на новой странице', results);
+                            if (originalOnComplete) {
+                                originalOnComplete(results);
+                            }
+                            resolve();
+                        };
+                        detector.start();
+                    });
+                }
+
+                await this.discoverLinksOnCurrentPage();
+                await this.tabSync.releaseUrlLock(url, 'completed');
+                this.crawledCount++;
+                this.log(`✅ URL обработан: ${url}`);
+            } catch (error) {
+                this.handleError(`Ошибка обработки URL ${url}`, error);
+                await this.tabSync.releaseUrlLock(url, 'processing_error');
             }
         }
 
@@ -1670,33 +1897,29 @@
             return skipPatterns.some(pattern => pattern.test(url));
         }
 
-        stop() {
+        async stop() {
             this.log('🛑 Остановка краулера...');
             this.isRunning = false;
+            if (this.tabSync) {
+                await this.tabSync.destroy();
+            }
             this.saveCrawlerStatus();
-
-            // Показываем статистику
             this.showFinalStats();
         }
 
 
 
         async reset() {
-            // 1) остановить, если запущен
             this.isRunning = false;
-
-            // 2) удалить IndexedDB
+            if (this.tabSync) {
+                await this.tabSync.destroy();
+            }
             const dbDeleteReq = indexedDB.deleteDatabase(CONFIG.CRAWLER_DB_NAME);
             dbDeleteReq.onsuccess = () => console.log('IndexedDB удалена');
             dbDeleteReq.onerror = () => console.error('Ошибка при удалении IndexedDB');
-
-            // 3) очистить localStorage
             localStorage.removeItem('crawlerStatus');
-
-            // 4) очистить внутренние структуры
             this.crawledCount = 0;
             this.errors = [];
-
             console.log('Краулер сброшен в начальное состояние');
         }
 
@@ -1746,52 +1969,6 @@
             this.log(`❌ ${message}: ${error.message}`, 'error');
         }
 
-
-        async checkCurrentPageForErrors() {
-            try {
-                // Проверяем заголовок страницы на наличие ошибок
-                const title = document.title.toLowerCase();
-                const errorTitles = ['404', '403', '500', 'error', 'not found', 'access denied', 'server error'];
-
-                const hasErrorInTitle = errorTitles.some(errorText => title.includes(errorText));
-
-                if (hasErrorInTitle) {
-                    return { hasError: true, errorType: 'error_in_title' };
-                }
-
-                // Проверяем основной контент на наличие сообщений об ошибках
-                const bodyText = document.body.textContent.toLowerCase();
-                const errorMessages = [
-                    '404', '403', '500', '502', '503', '504',
-                    'not found', 'page not found', 'file not found',
-                    'access denied', 'forbidden', 'unauthorized',
-                    'internal server error', 'service unavailable',
-                    'bad gateway', 'gateway timeout'
-                ];
-
-                const hasErrorInContent = errorMessages.some(errorMsg => bodyText.includes(errorMsg));
-
-                if (hasErrorInContent) {
-                    return { hasError: true, errorType: 'error_in_content' };
-                }
-
-                // Проверяем наличие основного контента
-                const contentElements = document.querySelectorAll('main, article, .content, #content, .main');
-                const hasMainContent = contentElements.length > 0 &&
-                    Array.from(contentElements).some(el => el.textContent.trim().length > 100);
-
-                if (!hasMainContent && document.body.textContent.trim().length < 200) {
-                    return { hasError: true, errorType: 'insufficient_content' };
-                }
-
-                return { hasError: false, errorType: null };
-
-            } catch (error) {
-                this.log(`⚠️ Ошибка проверки страницы на ошибки: ${error.message}`, 'debug');
-                return { hasError: false, errorType: null };
-            }
-        }
-
         log(message, type = 'info') {
             const prefix = {
                 info: '🕷️',
@@ -1804,10 +1981,7 @@
         }
     }
 
-
-
     let crawler;
-
 
     // Start app
     function startApp() {
