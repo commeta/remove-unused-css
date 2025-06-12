@@ -294,6 +294,10 @@ class RemoveUnusedCSSProcessor
     {
         foreach ($selectorsData as $relativePath => $selectors) {
             $normalizedPath = $this->normalizeFilePath($relativePath);
+            if ($normalizedPath === null) {
+                continue;
+            }
+
             if (!isset($masterSelectors[$normalizedPath])) {
                 $masterSelectors[$normalizedPath] = [];
                 $fullPath = $this->getFullFilePath($normalizedPath);
@@ -342,43 +346,60 @@ class RemoveUnusedCSSProcessor
         }
     }
 
-    private function normalizeFilePath(string $path): string
+    /**
+     * Нормализует входной путь, убирая query/fragment и ведущие слэши,
+     * но не блокируя ../ — realpath развернёт их.
+     */
+    private function normalizeFilePath(string $path): ?string
     {
-        $parsedPath = parse_url($path, PHP_URL_PATH) ?: $path;
-        return ltrim($parsedPath, '/');
+        $parsed = parse_url($path, PHP_URL_PATH) ?: $path;
+        $rel    = ltrim(str_replace('\\', '/', $parsed), '/');
+
+        // Собираем полный путь и сразу проверяем его валидность
+        $full  = realpath($this->documentRoot . '/' . $rel);
+        $root  = realpath($this->documentRoot);
+
+        if (!$full || !$root) {
+            // файл не существует или корень не определён
+            return null;
+        }
+        if (strpos($full, $root) !== 0) {
+            // попытка выйти за пределы корня
+            return null;
+        }
+
+        // Отрезаем documentRoot, возвращаем относительный корректный путь
+        return ltrim(substr($full, strlen($root)), DIRECTORY_SEPARATOR);
     }
 
+    /**
+     * По «чистому» относительному пути из normalizeFilePath
+     * возвращает абсолютный путь или null.
+     */
     private function getFullFilePath(string $relativePath): ?string
     {
+        // Защита от бинарных payload’ов
         if (strpos($relativePath, "\0") !== false) {
             return null;
         }
 
-        $relativePath = str_replace('\\', '/', $relativePath);
-        $relativePath = ltrim($relativePath, '/');
+        // realpath для окончательного разворачивания и проверки доступа
+        $full      = realpath($this->documentRoot . '/' . $relativePath);
+        $root      = realpath($this->documentRoot);
 
-        if (preg_match('#\.\.(?:/|$)#', $relativePath)) {
+        if (!$full || !$root) {
+            return null;
+        }
+        if (strpos($full, $root) !== 0) {
+            return null;
+        }
+        if (!is_file($full) || !is_readable($full)) {
             return null;
         }
 
-        $fullPath      = $this->documentRoot . '/' . $relativePath;
-        $resolvedFull  = realpath($fullPath);
-        $resolvedRoot  = realpath($this->documentRoot);
-
-        if (!$resolvedFull || !$resolvedRoot) {
-            return null;
-        }
-
-        if (strpos($resolvedFull, $resolvedRoot) !== 0) {
-            return null;
-        }
-
-        if (!is_file($resolvedFull) || !is_readable($resolvedFull)) {
-            return null;
-        }
-
-        return $resolvedFull;
+        return $full;
     }
+
 
     /**
      * Создаёт бэкап текущих CSS-файлов из подкаталога css/
@@ -771,6 +792,7 @@ try {
         $e->getTraceAsString()
     ));
 }
+
 
 
 ?>
