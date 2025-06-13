@@ -1,5 +1,5 @@
 {
     "require": {
-        "sabberworm/php-css-parser": "^8.4"
+        "sabberworm/php-css-parser": "^8.8"
     }
 }
