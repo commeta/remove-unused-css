@@ -19,13 +19,22 @@ require_once __DIR__ . '/vendor/autoload.php';
 const LOCK_FILE = __DIR__ . '/process.lock';
 
 use Sabberworm\CSS\Parser;
-use Sabberworm\CSS\CSSList\Document;
-use Sabberworm\CSS\RuleSet\DeclarationBlock;
-use Sabberworm\CSS\CSSList\AtRuleBlock;
-use Sabberworm\CSS\Property\AtRule;
-use Sabberworm\CSS\Value\RuleValueList;
 use Sabberworm\CSS\Renderable;
 use Sabberworm\CSS\OutputFormat;
+
+use Sabberworm\CSS\CSSList\Document;
+use Sabberworm\CSS\CSSList\AtRuleBlockList;
+
+use Sabberworm\CSS\RuleSet\DeclarationBlock;
+use Sabberworm\CSS\RuleSet\AtRuleSet;
+
+use Sabberworm\CSS\Property\AtRule;
+
+use Sabberworm\CSS\Value\URL;
+use Sabberworm\CSS\Value\CSSFunction;
+use Sabberworm\CSS\Value\CSSString;
+use Sabberworm\CSS\Value\ValueList;
+use Sabberworm\CSS\Value\RuleValueList;
 
 class RemoveUnusedCSSProcessor
 {
@@ -42,6 +51,9 @@ class RemoveUnusedCSSProcessor
     private const CSS_MINIFY = true;           // минимизировать individual файлы
     private const CSS_COMBINED_MINIFY = true;  // минимизировать объединённый файл
 
+    private const FIX_PATHS_INDIVIDUAL   = true;  // исправлять пути в отдельных очищенных файлах
+    private const FIX_PATHS_COMBINED     = true;  // исправлять пути в объединённом файле
+    
     // Paths and state
     private string $documentRoot;
     private string $baseDir;
@@ -344,8 +356,11 @@ class RemoveUnusedCSSProcessor
                         $selectors[$selector] = $this->isSelectorSafeToRemove($selector) ? 'unused' : 'used';
                     }
                 }
-            } elseif ($rule instanceof AtRuleBlock) {
-                $this->collectSelectorsFromDocument($rule, $selectors);
+            } elseif ($rule instanceof AtRuleBlockList || $rule instanceof AtRuleSet) {
+                // Рекурсивно обрабатываем at-правила, которые могут содержать селекторы
+                if (method_exists($rule, 'getContents')) {
+                    $this->collectSelectorsFromDocument($rule, $selectors);
+                }
             }
         }
     }
@@ -448,12 +463,13 @@ class RemoveUnusedCSSProcessor
     {
         $cssDir = $this->baseDir . '/' . self::CSS_DIR;
         $this->ensureDirectoryExists($cssDir);
-        $combinedContent = '';
-        $importCharset = '';
-        $totalOriginalSize = 0;
-        $totalFinalSize = 0;
-        $totalRemovedSelectors = 0;
-        $generatedFileCount = 0;
+
+        $combinedContent        = '';
+        $importCharset          = '';
+        $totalOriginalSize      = 0;
+        $totalFinalSize         = 0;
+        $totalRemovedSelectors  = 0;
+        $generatedFileCount     = 0;
 
         foreach ($masterSelectors as $relativePath => $selectors) {
             try {
@@ -462,52 +478,72 @@ class RemoveUnusedCSSProcessor
                     $this->errors[] = "Файл не найден или недоступен: {$relativePath}";
                     continue;
                 }
+
                 $originalSize = filesize($fullPath);
                 $totalOriginalSize += $originalSize;
+
                 $result = $this->processFile($fullPath, $selectors);
-                if ($result && isset($result['cssDocument'])) {
-                    $cssDocument = $result['cssDocument'];
-                    $cleanCssPath = $cssDir . $relativePath;
-                    $this->ensureDirectoryExists(dirname($cleanCssPath));
-                    if (self::CSS_MINIFY) {
-                        $minifiedCss = $cssDocument->render(OutputFormat::createCompact());
-                    } else {
-                        $minifiedCss = $cssDocument->render();
-                    }
-                    if (file_put_contents($cleanCssPath, $minifiedCss) !== false) {
-                        $this->processedFiles[] = $relativePath;
-                        $generatedFileCount++;
-                        $finalSize = strlen($minifiedCss);
-                        $totalFinalSize += $finalSize;
-                        $totalRemovedSelectors += $result['removed_selectors'];
-                        $importCharset .= ($result['import_charset'] ?? '');
-                        $combinedContent .= $minifiedCss . "\n\n";
-                    } else {
-                        $this->errors[] = "Не удалось сохранить файл: {$cleanCssPath}";
-                    }
+                if (!isset($result['cssDocument'])) {
+                    continue;
                 }
+
+                $cssDocument   = $result['cssDocument'];
+                $cleanCssPath  = $cssDir . $relativePath;
+                $this->ensureDirectoryExists(dirname($cleanCssPath));
+
+                // Рендерим/минифицируем каждый файл отдельно
+                if (self::CSS_MINIFY) {
+                    $minifiedCss = $cssDocument->render(OutputFormat::createCompact());
+                } else {
+                    $minifiedCss = $cssDocument->render();
+                }
+
+                if (file_put_contents($cleanCssPath, $minifiedCss) !== false) {
+                    $this->processedFiles[]     = $relativePath;
+                    $generatedFileCount++;
+                    $finalSize         = strlen($minifiedCss);
+                    $totalFinalSize   += $finalSize;
+                    $totalRemovedSelectors += $result['removed_selectors'] ?? 0;
+                    $importCharset   .= $result['import_charset'] ?? '';
+                    $combinedContent .= $minifiedCss . "\n\n";
+                } else {
+                    $this->errors[] = "Не удалось сохранить файл: {$cleanCssPath}";
+                }
+
             } catch (Exception $e) {
                 $this->errors[] = "Ошибка обработки файла {$relativePath}: " . $e->getMessage();
             }
         }
 
+        // Блок объединённого CSS с исправлением путей и опциональной минификацией
         if (!empty($combinedContent)) {
-            $combinedPath = $cssDir . self::COMBINED_FILE;
-            $finalCombinedContent = $importCharset . $combinedContent;
-            if (self::CSS_COMBINED_MINIFY) {
-                try {
-                    $parserCombined = new Parser($finalCombinedContent);
-                    $docCombined = $parserCombined->parse();
-                    $finalCombinedContent = $docCombined->render(OutputFormat::createCompact());
-                } catch (Exception $e) {
-                    $this->errors[] = "Не удалось минифицировать объединённый CSS: " . $e->getMessage();
+            $combinedPath          = $cssDir . self::COMBINED_FILE;
+            $finalCombinedContent  = $importCharset . $combinedContent;
+
+            try {
+                $parserCombined = new Parser($finalCombinedContent);
+                $docCombined    = $parserCombined->parse();
+
+                // Исправляем пути в объединённом файле, если включена настройка
+                if (defined('self::FIX_PATHS_COMBINED') && self::FIX_PATHS_COMBINED) {
+                    $this->fixPathsInCssDocument($docCombined, $this->documentRoot);
                 }
+
+                if (self::CSS_COMBINED_MINIFY) {
+                    $finalCombinedContent = $docCombined->render(OutputFormat::createCompact());
+                } else {
+                    $finalCombinedContent = $docCombined->render();
+                }
+
+            } catch (Exception $e) {
+                $this->errors[] = "Не удалось обработать объединённый CSS: " . $e->getMessage();
             }
+
             $combinedSize = strlen($finalCombinedContent);
             if (file_put_contents($combinedPath, $finalCombinedContent) !== false) {
                 $generatedFileCount++;
             } else {
-                $this->errors[] = "Не удалось создать объединенный файл: {$combinedPath}";
+                $this->errors[] = "Не удалось создать объединённый файл: {$combinedPath}";
             }
 
             $this->statistics['combined_size'] = $combinedSize;
@@ -515,38 +551,80 @@ class RemoveUnusedCSSProcessor
             $this->statistics['combined_size'] = 0;
         }
 
+        // Итоговые статистики
         $this->statistics = array_merge($this->statistics, [
-            'processed_files' => count($this->processedFiles),
-            'generated_files' => $generatedFileCount,
-            'combined_file' => !empty($combinedContent),
-            'original_size' => $totalOriginalSize,
-            'final_size' => $totalFinalSize,
-            'bytes_saved' => $totalOriginalSize - $totalFinalSize,
-            'selectors_removed' => $totalRemovedSelectors
+            'processed_files'   => count($this->processedFiles),
+            'generated_files'   => $generatedFileCount,
+            'combined_file'     => !empty($combinedContent),
+            'original_size'     => $totalOriginalSize,
+            'final_size'        => $totalFinalSize,
+            'bytes_saved'       => $totalOriginalSize - $totalFinalSize,
+            'selectors_removed' => $totalRemovedSelectors,
         ]);
     }
 
 
-
+    /**
+     * Обрабатывает CSS-файл: парсит, удаляет неиспользуемые селекторы и исправляет пути.
+     *
+     * @param string $filePath Путь к CSS-файлу.
+     * @param array  $selectors Массив селекторов для проверки использования.
+     * @return array|null Массив с ключами 'cssDocument', 'removed_selectors', 'import_charset' или null.
+     * @throws RuntimeException В случае ошибок чтения, размера файла или парсинга.
+     */
     private function processFile(string $filePath, array $selectors): ?array
     {
         $fileSize = filesize($filePath);
-        if ($fileSize > self::MAX_FILE_SIZE) {
-            throw new RuntimeException("Файл слишком большой: {$filePath}");
+        if ($fileSize === false || $fileSize > self::MAX_FILE_SIZE) {
+            throw new RuntimeException("Файл слишком большой или недоступен: {$filePath}");
         }
+
         $cssContent = file_get_contents($filePath);
         if ($cssContent === false) {
             throw new RuntimeException("Не удалось прочитать файл: {$filePath}");
         }
+
         try {
+            // Первый парсинг содержимого
             $parser = new Parser($cssContent);
             $cssDocument = $parser->parse();
+
+            // 1) Исправляем пути (Parser‑based)
+            if (self::FIX_PATHS_INDIVIDUAL) {
+                $this->fixPathsInCssDocument($cssDocument, $filePath);
+            }
+
+            // 2) Удаляем неиспользуемые селекторы
             $importCharset = '';
             $removedSelectors = $this->removeUnusedRules($cssDocument, $selectors, $importCharset);
+
+            // 3) Дополнительная пост‑обработка через регулярки
+            if (self::FIX_PATHS_INDIVIDUAL) {
+                $originalDir   = dirname($filePath);
+                $documentRoot  = realpath($this->documentRoot);
+                $relativeDir   = '';
+
+                if ($documentRoot && strpos($originalDir, $documentRoot) === 0) {
+                    $relativeDir = trim(substr($originalDir, strlen($documentRoot)), DIRECTORY_SEPARATOR);
+                    if ($relativeDir !== '') {
+                        $relativeDir = '/' . str_replace(DIRECTORY_SEPARATOR, '/', $relativeDir);
+                    }
+                }
+
+                // Рендерим CSS, применяем regexp‑патчи и при изменении повторно парсим
+                $renderedCSS = $cssDocument->render();
+                $processedCSS = $this->postProcessCSSContent($renderedCSS, $relativeDir);
+
+                if ($processedCSS !== $renderedCSS) {
+                    $parser     = new Parser($processedCSS);
+                    $cssDocument = $parser->parse();
+                }
+            }
+
             return [
-                'cssDocument' => $cssDocument,
-                'removed_selectors' => $removedSelectors,
-                'import_charset' => $importCharset
+                'cssDocument'      => $cssDocument,
+                'removed_selectors'=> $removedSelectors,
+                'import_charset'   => $importCharset,
             ];
         } catch (Exception $e) {
             throw new RuntimeException("Ошибка парсинга CSS в файле {$filePath}: " . $e->getMessage());
@@ -559,6 +637,7 @@ class RemoveUnusedCSSProcessor
         $contents = $cssDocument->getContents();
         $toRemove = [];
         $removedCount = 0;
+        
         foreach ($contents as $rule) {
             if ($rule instanceof DeclarationBlock) {
                 $result = $this->processDeclarationBlock($rule, $selectors);
@@ -568,16 +647,19 @@ class RemoveUnusedCSSProcessor
                 } elseif ($result['modified']) {
                     $removedCount += $result['count'];
                 }
-            } elseif ($rule instanceof AtRuleBlock) {
+            } elseif ($rule instanceof AtRuleBlockList || $rule instanceof AtRuleSet) {
                 $atRuleType = strtolower($rule->atRuleName());
+                
                 if (in_array($atRuleType, ['charset', 'import'])) {
                     $importCharset .= $rule->render() . "\n";
                     $toRemove[] = $rule;
                     continue;
                 }
+                
                 if ($this->shouldPreserveAtRule($atRuleType)) {
                     continue;
                 }
+                
                 if (in_array($atRuleType, ['supports', 'media', 'document', 'layer', 'container'])) {
                     $removedCount += $this->removeUnusedRules($rule, $selectors, $importCharset);
                     if (empty($rule->getContents())) {
@@ -588,9 +670,11 @@ class RemoveUnusedCSSProcessor
                 }
             }
         }
+        
         foreach ($toRemove as $rule) {
             $cssDocument->remove($rule);
         }
+        
         return $removedCount;
     }
 
@@ -660,6 +744,337 @@ class RemoveUnusedCSSProcessor
                 throw new RuntimeException("Не удалось создать каталог: {$dir}");
             }
         }
+    }
+
+    /**
+     * Исправляет пути в CSS документе, делая их абсолютными от корня сайта
+     */
+    private function fixPathsInCssDocument($cssDocument, string $originalFilePath): void
+    {
+        $originalDir = dirname($originalFilePath);
+        $documentRoot = realpath($this->documentRoot);
+        
+        if (!$documentRoot) {
+            return;
+        }
+        
+        // Получаем относительный путь от корня сайта до директории CSS файла
+        $relativeDirFromRoot = '';
+        if (strpos($originalDir, $documentRoot) === 0) {
+            $relativeDirFromRoot = trim(substr($originalDir, strlen($documentRoot)), DIRECTORY_SEPARATOR);
+            if ($relativeDirFromRoot) {
+                $relativeDirFromRoot = '/' . str_replace(DIRECTORY_SEPARATOR, '/', $relativeDirFromRoot);
+            }
+        }
+        
+        $this->processRulesForPaths($cssDocument, $relativeDirFromRoot);
+    }
+
+    /**
+     * Рекурсивно обрабатывает все правила в CSS документе для исправления путей
+     */
+    private function processRulesForPaths($cssDocument, string $relativeDirFromRoot): void
+    {
+        foreach ($cssDocument->getContents() as $rule) {
+            if ($rule instanceof DeclarationBlock) {
+                $this->fixPathsInDeclarationBlock($rule, $relativeDirFromRoot);
+            } elseif ($rule instanceof AtRuleBlockList || $rule instanceof AtRuleSet) {
+                $this->fixPathsInAtRule($rule, $relativeDirFromRoot);
+                // Рекурсивно обрабатываем содержимое at-правил
+                if (method_exists($rule, 'getContents')) {
+                    $this->processRulesForPaths($rule, $relativeDirFromRoot);
+                }
+            }
+        }
+    }
+
+    /**
+     * Исправляет пути в блоке объявлений (обычные CSS правила)
+     */
+    private function fixPathsInDeclarationBlock(DeclarationBlock $block, string $relativeDirFromRoot): void
+    {
+        foreach ($block->getRules() as $rule) {
+            $value = $rule->getValue();
+            if ($value) {
+                $newValue = $this->fixPathsInValue($value, $relativeDirFromRoot);
+                if ($newValue !== $value) {
+                    $rule->setValue($newValue);
+                }
+            }
+        }
+    }
+
+    /**
+     * Исправляет пути в at-правилах (@import, @font-face, @namespace и т.д.)
+     */
+    private function fixPathsInAtRule($atRule, string $relativeDirFromRoot): void
+    {
+        $atRuleType = strtolower($atRule->atRuleName());
+        
+        // Обработка @import
+        if ($atRuleType === 'import') {
+            if (method_exists($atRule, 'getRule')) {
+                $rule = $atRule->getRule();
+                if ($rule) {
+                    $newRule = $this->fixPathsInValue($rule, $relativeDirFromRoot);
+                    if ($newRule !== $rule && method_exists($atRule, 'setRule')) {
+                        $atRule->setRule($newRule);
+                    }
+                }
+            }
+        }
+        
+        // Обработка @namespace
+        if ($atRuleType === 'namespace') {
+            if (method_exists($atRule, 'getRule')) {
+                $rule = $atRule->getRule();
+                if ($rule) {
+                    $newRule = $this->fixPathsInValue($rule, $relativeDirFromRoot);
+                    if ($newRule !== $rule && method_exists($atRule, 'setRule')) {
+                        $atRule->setRule($newRule);
+                    }
+                }
+            }
+        }
+        
+        // Обработка @font-face и других at-правил с содержимым
+        if ($atRule instanceof AtRuleBlockList && method_exists($atRule, 'getContents')) {
+            foreach ($atRule->getContents() as $rule) {
+                if ($rule instanceof DeclarationBlock) {
+                    $this->fixPathsInDeclarationBlock($rule, $relativeDirFromRoot);
+                }
+            }
+        }
+    }
+
+    /**
+     * Исправляет пути в значениях CSS свойств
+     */
+    private function fixPathsInValue($value, string $relativeDirFromRoot)
+    {
+        if ($value instanceof URL) {
+            return $this->fixUrlValue($value, $relativeDirFromRoot);
+        }
+        
+        if ($value instanceof CSSFunction) {
+            return $this->fixPathsInFunction($value, $relativeDirFromRoot);
+        }
+        
+        if ($value instanceof ValueList || $value instanceof RuleValueList) {
+            return $this->fixPathsInValueList($value, $relativeDirFromRoot);
+        }
+        
+        // Обработка строковых значений с URL
+        if ($value instanceof CSSString) {
+            $stringValue = $value->getString();
+            // Проверяем, содержит ли строка url()
+            if (preg_match('/url\s*\(\s*["\']?([^"\')\s]+)["\']?\s*\)/i', $stringValue, $matches)) {
+                $url = $matches[1];
+                $newUrl = $this->convertToAbsolutePath($url, $relativeDirFromRoot);
+                if ($newUrl !== $url) {
+                    $newStringValue = str_replace($matches[0], 'url("' . $newUrl . '")', $stringValue);
+                    $value->setString($newStringValue);
+                }
+            }
+        }
+        
+        // Обработка обычных строк (для @import и других случаев)
+        if (is_string($value)) {
+            // Обрабатываем строки с url()
+            return preg_replace_callback('/url\s*\(\s*["\']?([^"\')\s]+)["\']?\s*\)/i', function($matches) use ($relativeDirFromRoot) {
+                $url = $matches[1];
+                $newUrl = $this->convertToAbsolutePath($url, $relativeDirFromRoot);
+                return 'url("' . $newUrl . '")';
+            }, $value);
+        }
+        
+        return $value;
+    }
+
+    /**
+     * Исправляет URL значения
+     */
+    private function fixUrlValue(URL $url, string $relativeDirFromRoot): URL
+    {
+        try {
+            $urlValue = $url->getURL();
+            
+            if ($urlValue instanceof CSSString) {
+                $path = $urlValue->getString();
+                $newPath = $this->convertToAbsolutePath($path, $relativeDirFromRoot);
+                if ($newPath !== $path) {
+                    $urlValue->setString($newPath);
+                }
+            } elseif (is_string($urlValue)) {
+                // Обработка случаев, когда URL возвращается как строка
+                $newPath = $this->convertToAbsolutePath($urlValue, $relativeDirFromRoot);
+                if ($newPath !== $urlValue) {
+                    // Создаем новый CSSString объект
+                    $url->setURL(new CSSString($newPath));
+                }
+            }
+        } catch (Exception $e) {
+            // Логируем ошибку, но не прерываем обработку
+            $this->errors[] = "Ошибка обработки URL: " . $e->getMessage();
+        }
+        
+        return $url;
+    }
+
+    /**
+     * Исправляет пути в CSS функциях (image-set, cross-fade, paint и т.д.)
+     */
+    private function fixPathsInFunction(CSSFunction $function, string $relativeDirFromRoot): CSSFunction
+    {
+        $functionName = strtolower($function->getName());
+        
+        // Обрабатываем функции, которые могут содержать URL
+        if (in_array($functionName, [
+            'image-set', '-webkit-image-set', 'cross-fade', 'paint',
+            'url', 'src', 'element'
+        ])) {
+            $arguments = $function->getArguments();
+            $modified = false;
+            
+            foreach ($arguments as $i => $arg) {
+                $newArg = $this->fixPathsInValue($arg, $relativeDirFromRoot);
+                if ($newArg !== $arg) {
+                    $arguments[$i] = $newArg;
+                    $modified = true;
+                }
+            }
+            
+            if ($modified) {
+                $function->setArguments($arguments);
+            }
+        }
+        
+        return $function;
+    }
+
+    /**
+     * Исправляет пути в списках значений
+     */
+    private function fixPathsInValueList($valueList, string $relativeDirFromRoot)
+    {
+        $values = $valueList->getListComponents();
+        $modified = false;
+        
+        foreach ($values as $i => $value) {
+            $newValue = $this->fixPathsInValue($value, $relativeDirFromRoot);
+            if ($newValue !== $value) {
+                $values[$i] = $newValue;
+                $modified = true;
+            }
+        }
+        
+        if ($modified) {
+            $valueList->setListComponents($values);
+        }
+        
+        return $valueList;
+    }
+
+    /**
+     * Конвертирует относительный путь в абсолютный от корня сайта
+     */
+    private function convertToAbsolutePath(string $path, string $relativeDirFromRoot): string
+    {
+        // Удаляем кавычки если есть
+        $cleanPath = trim($path, '"\'');
+        
+        // Пропускаем уже абсолютные пути и внешние ресурсы
+        if (
+            empty($cleanPath) ||
+            $cleanPath[0] === '/' ||
+            $cleanPath[0] === '#' ||
+            strpos($cleanPath, 'http://') === 0 ||
+            strpos($cleanPath, 'https://') === 0 ||
+            strpos($cleanPath, '//') === 0 ||
+            strpos($cleanPath, 'data:') === 0 ||
+            strpos($cleanPath, 'blob:') === 0
+        ) {
+            return $path;
+        }
+        
+        // Строим абсолютный путь от корня сайта
+        if ($relativeDirFromRoot) {
+            $absolutePath = $relativeDirFromRoot . '/' . $cleanPath;
+        } else {
+            $absolutePath = '/' . $cleanPath;
+        }
+        
+        // Нормализуем путь (убираем ../  и ./)
+        $absolutePath = $this->normalizePath($absolutePath);
+        
+        // Возвращаем с теми же кавычками, что были в оригинале
+        if (strpos($path, '"') !== false) {
+            return '"' . $absolutePath . '"';
+        } elseif (strpos($path, "'") !== false) {
+            return "'" . $absolutePath . "'";
+        }
+        
+        return $absolutePath;
+    }
+
+    /**
+     * Дополнительная обработка CSS содержимого через регулярные выражения
+     * Вызывается после основной обработки парсером для захвата пропущенных URL
+     */
+    private function postProcessCSSContent(string $cssContent, string $relativeDirFromRoot): string
+    {
+        // Обрабатываем все url() в тексте CSS
+        $cssContent = preg_replace_callback(
+            '/url\s*\(\s*(["\']?)([^"\')\s]+)\1\s*\)/i',
+            function($matches) use ($relativeDirFromRoot) {
+                $quote = $matches[1];
+                $url = $matches[2];
+                $newUrl = $this->convertToAbsolutePath($url, $relativeDirFromRoot);
+                return 'url(' . $quote . $newUrl . $quote . ')';
+            },
+            $cssContent
+        );
+        
+        // Обрабатываем @import без url()
+        $cssContent = preg_replace_callback(
+            '/@import\s+(["\'])([^"\']+)\1/i',
+            function($matches) use ($relativeDirFromRoot) {
+                $quote = $matches[1];
+                $url = $matches[2];
+                $newUrl = $this->convertToAbsolutePath($url, $relativeDirFromRoot);
+                return '@import ' . $quote . $newUrl . $quote;
+            },
+            $cssContent
+        );
+        
+        return $cssContent;
+    }
+
+
+    /**
+     * Нормализует путь, убирая ../ и ./
+     */
+    private function normalizePath(string $path): string
+    {
+        $parts = explode('/', $path);
+        $normalized = [];
+        
+        foreach ($parts as $part) {
+            if ($part === '' || $part === '.') {
+                continue;
+            }
+            
+            if ($part === '..') {
+                if (!empty($normalized) && end($normalized) !== '..') {
+                    array_pop($normalized);
+                }
+                continue;
+            }
+            
+            $normalized[] = $part;
+        }
+        
+        return '/' . implode('/', $normalized);
     }
 
     private function sendSuccess(string $message): void
