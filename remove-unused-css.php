@@ -25,6 +25,7 @@ use Sabberworm\CSS\CSSList\AtRuleBlock;
 use Sabberworm\CSS\Property\AtRule;
 use Sabberworm\CSS\Value\RuleValueList;
 use Sabberworm\CSS\Renderable;
+use Sabberworm\CSS\OutputFormat;
 
 class RemoveUnusedCSSProcessor
 {
@@ -37,6 +38,9 @@ class RemoveUnusedCSSProcessor
     private const SETTINGS_FILE = 'data/settings.json'; // Путь к JSON-файлу с пользовательскими настройками фильтрации
     private const MAX_INPUT_SIZE    = 15 * 1024 * 1024; // Максимальный размер JSON-пэйлоада (15 МБ)
     private const JSON_DECODE_DEPTH = 512; // Максимальная глубина вложенности при декодировании JSON
+
+    private const CSS_MINIFY = true;           // минимизировать individual файлы
+    private const CSS_COMBINED_MINIFY = true;  // минимизировать объединённый файл
 
     // Paths and state
     private string $documentRoot;
@@ -439,17 +443,18 @@ class RemoveUnusedCSSProcessor
         }
     }
 
+
     private function generateCleanCssFiles(array $masterSelectors): void
     {
         $cssDir = $this->baseDir . '/' . self::CSS_DIR;
         $this->ensureDirectoryExists($cssDir);
-
         $combinedContent = '';
         $importCharset = '';
         $totalOriginalSize = 0;
         $totalFinalSize = 0;
         $totalRemovedSelectors = 0;
         $generatedFileCount = 0;
+
         foreach ($masterSelectors as $relativePath => $selectors) {
             try {
                 $fullPath = $this->getFullFilePath($relativePath);
@@ -460,10 +465,15 @@ class RemoveUnusedCSSProcessor
                 $originalSize = filesize($fullPath);
                 $totalOriginalSize += $originalSize;
                 $result = $this->processFile($fullPath, $selectors);
-                if ($result && !empty($result['css'])) {
+                if ($result && isset($result['cssDocument'])) {
+                    $cssDocument = $result['cssDocument'];
                     $cleanCssPath = $cssDir . $relativePath;
                     $this->ensureDirectoryExists(dirname($cleanCssPath));
-                    $minifiedCss = $this->minifyCss($result['css']);
+                    if (self::CSS_MINIFY) {
+                        $minifiedCss = $cssDocument->render(OutputFormat::createCompact());
+                    } else {
+                        $minifiedCss = $cssDocument->render();
+                    }
                     if (file_put_contents($cleanCssPath, $minifiedCss) !== false) {
                         $this->processedFiles[] = $relativePath;
                         $generatedFileCount++;
@@ -480,28 +490,43 @@ class RemoveUnusedCSSProcessor
                 $this->errors[] = "Ошибка обработки файла {$relativePath}: " . $e->getMessage();
             }
         }
-        $combinedSize = 0;
+
         if (!empty($combinedContent)) {
             $combinedPath = $cssDir . self::COMBINED_FILE;
             $finalCombinedContent = $importCharset . $combinedContent;
+            if (self::CSS_COMBINED_MINIFY) {
+                try {
+                    $parserCombined = new Parser($finalCombinedContent);
+                    $docCombined = $parserCombined->parse();
+                    $finalCombinedContent = $docCombined->render(OutputFormat::createCompact());
+                } catch (Exception $e) {
+                    $this->errors[] = "Не удалось минифицировать объединённый CSS: " . $e->getMessage();
+                }
+            }
             $combinedSize = strlen($finalCombinedContent);
             if (file_put_contents($combinedPath, $finalCombinedContent) !== false) {
                 $generatedFileCount++;
             } else {
                 $this->errors[] = "Не удалось создать объединенный файл: {$combinedPath}";
             }
+
+            $this->statistics['combined_size'] = $combinedSize;
+        } else {
+            $this->statistics['combined_size'] = 0;
         }
-        $this->statistics = [
+
+        $this->statistics = array_merge($this->statistics, [
             'processed_files' => count($this->processedFiles),
             'generated_files' => $generatedFileCount,
             'combined_file' => !empty($combinedContent),
             'original_size' => $totalOriginalSize,
             'final_size' => $totalFinalSize,
-            'combined_size' => $combinedSize,
             'bytes_saved' => $totalOriginalSize - $totalFinalSize,
             'selectors_removed' => $totalRemovedSelectors
-        ];
+        ]);
     }
+
+
 
     private function processFile(string $filePath, array $selectors): ?array
     {
@@ -519,7 +544,7 @@ class RemoveUnusedCSSProcessor
             $importCharset = '';
             $removedSelectors = $this->removeUnusedRules($cssDocument, $selectors, $importCharset);
             return [
-                'css' => $cssDocument->render(),
+                'cssDocument' => $cssDocument,
                 'removed_selectors' => $removedSelectors,
                 'import_charset' => $importCharset
             ];
@@ -527,6 +552,7 @@ class RemoveUnusedCSSProcessor
             throw new RuntimeException("Ошибка парсинга CSS в файле {$filePath}: " . $e->getMessage());
         }
     }
+
 
     private function removeUnusedRules($cssDocument, array $selectors, string &$importCharset): int
     {
@@ -634,16 +660,6 @@ class RemoveUnusedCSSProcessor
                 throw new RuntimeException("Не удалось создать каталог: {$dir}");
             }
         }
-    }
-
-    private function minifyCss(string $css): string
-    {
-        $css = preg_replace('!/\*[^*]*\*+([^/][^*]*\*+)*/!', '', $css);
-        $css = preg_replace('/\s+/', ' ', $css);
-        $css = preg_replace('/\s*([{}:;,>+~])\s*/', '$1', $css);
-        $css = preg_replace('/;+}/', '}', $css);
-        $css = preg_replace('/;\s*;+/',';',$css);
-        return trim($css);
     }
 
     private function sendSuccess(string $message): void
@@ -792,7 +808,5 @@ try {
         $e->getTraceAsString()
     ));
 }
-
-
 
 ?>
