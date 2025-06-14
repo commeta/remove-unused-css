@@ -1258,49 +1258,35 @@ try {
         }
         
     } else {
-        // === FLOCK БЛОКИРОВКА ===
+        // === FLOCK БЛОКИРОВКА (блочная) ===
         // Для CLI, CGI, FastCGI, PHP-FPM и других SAPI с отдельными процессами
         
-        // Создаем или открываем файл для блокировки
+        // Открываем или создаём файл для блокировки
         $fp = @fopen(LOCK_FILE, 'c+');
         if ($fp === false) {
             throw new RuntimeException('Не удалось открыть lock-файл для flock');
         }
         $lockFp = $fp;
         
-        $maxWait = 120;
-        $start   = time();
-        
-        // Пытаемся захватить эксклюзивную блокировку
-        while (!flock($lockFp, LOCK_EX | LOCK_NB)) {
-            if (time() - $start > $maxWait) {
-                http_response_code(423); // Locked
-                header('Content-Type: application/json; charset=utf-8');
-                echo json_encode([
-                    'success' => false,
-                    'error'   => 'Не удалось получить блокировку: превышено время ожидания',
-                    'timeout' => $maxWait,
-                    'method'  => 'flock'
-                ], JSON_UNESCAPED_UNICODE);
-                fclose($lockFp);
-                exit;
-            }
-            usleep(200000); // 0.2 секунды
+        // Блочно ждём, пока не получится эксклюзивно заблокировать файл
+        if (!flock($lockFp, LOCK_EX)) {
+            // flock вернёт false только в случае критической ошибки
+            throw new RuntimeException('Критическая ошибка flock при попытке захвата блокировки');
         }
         
         $haveLock = true;
         
-        // Записываем информацию о процессе
+        // Записываем информацию о процессе в начало файла
         ftruncate($lockFp, 0);
         rewind($lockFp);
         $lockData = [
-            'pid' => getmypid(),
-            'sapi' => PHP_SAPI,
-            'time' => time(),
+            'pid'    => getmypid(),
+            'sapi'   => PHP_SAPI,
+            'time'   => time(),
             'script' => $_SERVER['SCRIPT_NAME'] ?? 'unknown'
         ];
         fwrite($lockFp, json_encode($lockData) . "\n");
-        fflush($lockFp);
+        fflush($lockFp);        
     }
     
     // Логируем успешное получение блокировки
