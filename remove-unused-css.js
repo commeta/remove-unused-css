@@ -552,7 +552,7 @@
             menu.id = CONFIG.MENU_ID;
             menu.style.cssText = `
                 position: absolute;
-                right: 100%; /* выезжает влево от кнопки */
+                right: 100%;
                 top: 50%;
                 background: white;
                 border-radius: 8px;
@@ -566,10 +566,10 @@
                 overflow: hidden;
             `;
 
-            // пункты меню (как в вашем примере)
+            // пункты меню
             const menuItems = [
                 { text: 'Сохранить данные', action: 'save', icon: '💾' },
-                { text: 'Генерировать файлы', action: 'generate', icon: '⚙️' },
+                { text: 'Генерировать файлы', action: 'generate', icon: '🛠️' },
                 { text: 'Показать отчёт', action: 'report', icon: '📊' },
                 { text: 'Настройки', action: 'settings', icon: '⚙️' },
                 { text: 'Детектор', action: 'detector', icon: '🔍' },
