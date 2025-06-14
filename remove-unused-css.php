@@ -1160,68 +1160,207 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
-// Определяем ОС
-$isWindows = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
-$lockFp = null;
+// Определяем ОС и SAPI
+$isWindows = PHP_OS_FAMILY === 'Windows';
+$sapi = strtolower(PHP_SAPI);
+
+$lockFp   = null;
+$haveLock = false;
+
+/**
+ * Определяет, нужно ли использовать файловую блокировку вместо flock()
+ * @return bool
+ */
+function needsFileLocking() {
+    global $isWindows, $sapi;
+    
+    if (!$isWindows) {
+        return false; // В Unix всегда используем flock
+    }
+    
+    // В Windows проверяем проблемные SAPI
+    $problematicSapi = [
+        'isapi',           // ISAPI-расширение для IIS
+        'apache2handler',  // mod_php под Windows (многопоточный MPM)
+        'cli-server',      // встроенный веб-сервер (php -S)
+        'embed',           // встроенный PHP
+        'phpdbg'           // может быть проблематичен в некоторых случаях
+    ];
+    
+    foreach ($problematicSapi as $problematic) {
+        if (stripos($sapi, $problematic) !== false) {
+            return true;
+        }
+    }
+    
+    // Дополнительная проверка для Apache под Windows
+    if (stripos($sapi, 'apache') !== false && $isWindows) {
+        return true;
+    }
+    
+    return false;
+}
 
 try {
-    if (!$isWindows) {
-        // UNIX-подобные системы: используем flock
-        $lockFp = fopen(LOCK_FILE, 'c+');
-        if (!$lockFp) {
-            throw new RuntimeException('Не удалось открыть lock-файл');
-        }
-        flock($lockFp, LOCK_EX);
-    } else {
-        // Windows: ждём, пока файл-флаг не исчезнет или не устареет
-        while (file_exists(LOCK_FILE)) {
-            $age = time() - filemtime(LOCK_FILE);
-            if ($age > 120) {
-                // принудительно удаляем "зависший" файл
-                @unlink(LOCK_FILE);
+    $useFileLocking = needsFileLocking();
+    
+    if ($useFileLocking) {
+        // === ФАЙЛОВАЯ БЛОКИРОВКА ===
+        // Для ISAPI, Apache mod_php, встроенного сервера и других проблемных SAPI
+        
+        $maxWait   = 120;    // сек
+        $start     = time();
+        $delayUs   = 200000; // 0.2 секунды
+        
+        while (true) {
+            // Атомарное создание файла
+            $fp = @fopen(LOCK_FILE, 'x');
+            if ($fp !== false) {
+                // Захватили блокировку
+                $lockData = [
+                    'pid' => getmypid(),
+                    'sapi' => PHP_SAPI,
+                    'time' => time(),
+                    'script' => $_SERVER['SCRIPT_NAME'] ?? 'unknown'
+                ];
+                fwrite($fp, json_encode($lockData) . "\n");
+                fflush($fp);
+                $lockFp   = $fp;
+                $haveLock = true;
                 break;
             }
-            usleep(500000); // ждём 0.5 секунды и повторяем проверку
+            
+            // Проверяем возраст существующего lock-файла
+            clearstatcache(false, LOCK_FILE);
+            if (file_exists(LOCK_FILE)) {
+                $age = time() - @filemtime(LOCK_FILE);
+                if ($age > $maxWait) {
+                    // Старый lock-файл, удаляем его
+                    @unlink(LOCK_FILE);
+                    continue;
+                }
+            }
+            
+            // Проверяем таймаут ожидания
+            if (time() - $start > $maxWait) {
+                http_response_code(423); // Locked
+                header('Content-Type: application/json; charset=utf-8');
+                echo json_encode([
+                    'success' => false,
+                    'error'   => 'Не удалось получить блокировку: превышено время ожидания',
+                    'timeout' => $maxWait,
+                    'method'  => 'file_locking'
+                ], JSON_UNESCAPED_UNICODE);
+                exit;
+            }
+            
+            usleep($delayUs);
         }
-        // создаём новый файл-флаг
-        file_put_contents(LOCK_FILE, getmypid());
+        
+    } else {
+        // === FLOCK БЛОКИРОВКА ===
+        // Для CLI, CGI, FastCGI, PHP-FPM и других SAPI с отдельными процессами
+        
+        // Создаем или открываем файл для блокировки
+        $fp = @fopen(LOCK_FILE, 'c+');
+        if ($fp === false) {
+            throw new RuntimeException('Не удалось открыть lock-файл для flock');
+        }
+        $lockFp = $fp;
+        
+        $maxWait = 120;
+        $start   = time();
+        
+        // Пытаемся захватить эксклюзивную блокировку
+        while (!flock($lockFp, LOCK_EX | LOCK_NB)) {
+            if (time() - $start > $maxWait) {
+                http_response_code(423); // Locked
+                header('Content-Type: application/json; charset=utf-8');
+                echo json_encode([
+                    'success' => false,
+                    'error'   => 'Не удалось получить блокировку: превышено время ожидания',
+                    'timeout' => $maxWait,
+                    'method'  => 'flock'
+                ], JSON_UNESCAPED_UNICODE);
+                fclose($lockFp);
+                exit;
+            }
+            usleep(200000); // 0.2 секунды
+        }
+        
+        $haveLock = true;
+        
+        // Записываем информацию о процессе
+        ftruncate($lockFp, 0);
+        rewind($lockFp);
+        $lockData = [
+            'pid' => getmypid(),
+            'sapi' => PHP_SAPI,
+            'time' => time(),
+            'script' => $_SERVER['SCRIPT_NAME'] ?? 'unknown'
+        ];
+        fwrite($lockFp, json_encode($lockData) . "\n");
+        fflush($lockFp);
     }
-
-    // Запуск основного процесса
+    
+    // Логируем успешное получение блокировки
+    error_log(sprintf(
+        "[LOCK] Acquired by PID %d, SAPI: %s, Method: %s",
+        getmypid(),
+        PHP_SAPI,
+        $useFileLocking ? 'file_locking' : 'flock'
+    ));
+    
+    // === ОСНОВНОЙ КОД ЗАДАЧИ ===
     $processor = new RemoveUnusedCSSProcessor();
     $processor->processRequest();
-
-    // Снятие блокировки
-    if (!$isWindows) {
-        flock($lockFp, LOCK_UN);
-        fclose($lockFp);
-    } else {
-        @unlink(LOCK_FILE);
-    }
+    // ===========================
+    
 } catch (Throwable $e) {
-    // В случае ошибки освобождаем ресурсы
-    if (!$isWindows && isset($lockFp) && is_resource($lockFp)) {
-        flock($lockFp, LOCK_UN);
-        fclose($lockFp);
-    } elseif ($isWindows) {
-        @unlink(LOCK_FILE);
+    // В случае ошибки освобождаем блокировку
+    if ($haveLock && isset($lockFp) && is_resource($lockFp)) {
+        if ($useFileLocking) {
+            fclose($lockFp);
+            @unlink(LOCK_FILE);
+        } else {
+            flock($lockFp, LOCK_UN);
+            fclose($lockFp);
+        }
     }
-
+    
     http_response_code(500);
     header('Content-Type: application/json; charset=utf-8');
-    $response = [
+    echo json_encode([
         'success' => false,
-        'error'   => 'Critical error occurred',
-        'message' => $e->getMessage()
-    ];
-    echo json_encode($response, JSON_UNESCAPED_UNICODE);
+        'error'   => 'Критическая ошибка при выполнении',
+        'message' => $e->getMessage(),
+        'sapi'    => PHP_SAPI
+    ], JSON_UNESCAPED_UNICODE);
+    
     error_log(sprintf(
-        "[CRITICAL ERROR] %s in %s:%d\n%s\n",
+        "[CRITICAL ERROR] %s in %s:%d (SAPI: %s, PID: %d)\n%s\n",
         $e->getMessage(),
         $e->getFile(),
         $e->getLine(),
+        PHP_SAPI,
+        getmypid(),
         $e->getTraceAsString()
     ));
+    exit;
+    
+} finally {
+    // Освобождение блокировки в любом случае
+    if ($haveLock && isset($lockFp) && is_resource($lockFp)) {
+        if ($useFileLocking) {
+            fclose($lockFp);
+            @unlink(LOCK_FILE);
+            error_log("[LOCK] Released file lock by PID " . getmypid());
+        } else {
+            flock($lockFp, LOCK_UN);
+            fclose($lockFp);
+            error_log("[LOCK] Released flock by PID " . getmypid());
+        }
+    }
 }
 
 ?>
