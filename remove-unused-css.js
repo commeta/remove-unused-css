@@ -513,31 +513,64 @@
         static createFloatingButton() {
             if (document.getElementById(CONFIG.BUTTON_ID)) return;
 
+            // 1) Контейнер по центру правого края
             const container = document.createElement('div');
-            container.style.cssText = `position:fixed;bottom:20px;right:20px;z-index:9999;`;
+            container.style.cssText = `
+                position: fixed;
+                top: 50%;
+                right: 0;
+                transform: translateY(-50%);
+                z-index: 9999;
+                display: flex;
+                align-items: center;
+            `;
 
+            // 2) Сам «button» как панелька
             const button = document.createElement('button');
             button.id = CONFIG.BUTTON_ID;
-            button.innerHTML = '0';
-            button.title = 'Количество неиспользуемых CSS селекторов';
+            button.innerHTML = 'Меню';
+            button.title = 'Открыть меню';
             button.style.cssText = `
-                width:50px;height:50px;background-color:#e74c3c;color:white;
-                border:none;border-radius:50%;font-size:14px;font-weight:bold;
-                cursor:pointer;box-shadow:0 4px 8px rgba(0,0,0,0.3);
-                transition:all 0.3s ease;display:flex;align-items:center;justify-content:center;`;
+                padding: 0 16px;
+                height: 40px;
+                background-color: #e74c3c;
+                color: white;
+                border: none;
+                border-radius: 8px 0 0 8px;
+                font-size: 14px;
+                font-weight: bold;
+                cursor: pointer;
+                box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+                transition: all 0.3s ease;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            `;
 
+            // 3) Выезжающее меню — появляется слева от кнопки
             const menu = document.createElement('div');
             menu.id = CONFIG.MENU_ID;
             menu.style.cssText = `
-                position:absolute;bottom:60px;right:0;background:white;
-                border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);
-                min-width:200px;opacity:0;transform:translateY(10px);
-                transition:all 0.3s ease;pointer-events:none;border:1px solid #ddd;`;
+                position: absolute;
+                right: 100%; /* выезжает влево от кнопки */
+                top: 50%;
+                background: white;
+                border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                min-width: 200px;
+                opacity: 0;
+                transform: translateX(10px) translateY(-50%);
+                transition: all 0.3s ease;
+                pointer-events: none;
+                border: 1px solid #ddd;
+                overflow: hidden;
+            `;
 
+            // пункты меню (как в вашем примере)
             const menuItems = [
                 { text: 'Сохранить данные', action: 'save', icon: '💾' },
                 { text: 'Генерировать файлы', action: 'generate', icon: '⚙️' },
-                { text: 'Показать отчет', action: 'report', icon: '📊' },
+                { text: 'Показать отчёт', action: 'report', icon: '📊' },
                 { text: 'Настройки', action: 'settings', icon: '⚙️' },
                 { text: 'Детектор', action: 'detector', icon: '🔍' },
                 { text: 'Краулер', action: 'crawler', icon: '🕷️' },
@@ -547,10 +580,16 @@
             menuItems.forEach((item, index) => {
                 const menuItem = document.createElement('div');
                 menuItem.style.cssText = `
-                    padding:12px 16px;cursor:pointer;
-                    border-bottom:${index < menuItems.length - 1 ? '1px solid #eee' : 'none'};
-                    display:flex;align-items:center;gap:8px;font-size:14px;color:#333;
-                    transition:background-color 0.2s ease;`;
+                    padding: 12px 16px;
+                    cursor: pointer;
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    font-size: 14px;
+                    color: #333;
+                    border-bottom: ${index < menuItems.length - 1 ? '1px solid #eee' : 'none'};
+                    transition: background-color 0.2s ease;
+                `;
                 menuItem.innerHTML = `${item.icon} ${item.text}`;
                 menuItem.addEventListener('mouseenter', () => {
                     menuItem.style.backgroundColor = '#f8f9fa';
@@ -565,48 +604,44 @@
                 menu.appendChild(menuItem);
             });
 
+            // hover‑эффекты для кнопки
             button.addEventListener('mouseenter', () => {
-                if (!state.isProcessing) {
-                    button.style.transform = 'scale(1.1)';
-                    button.style.backgroundColor = '#c0392b';
-                }
+                button.style.transform = 'scale(1.05)';
+                button.style.backgroundColor = '#c0392b';
             });
             button.addEventListener('mouseleave', () => {
-                if (!state.isProcessing) {
-                    button.style.transform = 'scale(1)';
-                    button.style.backgroundColor = '#e74c3c';
-                }
+                button.style.transform = 'scale(1)';
+                button.style.backgroundColor = '#e74c3c';
             });
 
-            button.addEventListener('click', (e) => {
+            // переключение видимости меню
+            button.addEventListener('click', e => {
                 e.stopPropagation();
                 this.toggleMenu();
             });
 
-            container.appendChild(button);
+            // сборка DOM
             container.appendChild(menu);
+            container.appendChild(button);
             document.body.appendChild(container);
 
-            document.addEventListener('click', () => { this.hideMenu(); });
-            menu.addEventListener('click', (e) => { e.stopPropagation(); });
+            // клик вне меню — скрываем
+            document.addEventListener('click', () => this.hideMenu());
+            menu.addEventListener('click', e => e.stopPropagation());
         }
 
         static toggleMenu() {
             const menu = document.getElementById(CONFIG.MENU_ID);
             if (!menu) return;
-            const isVisible = menu.style.opacity === '1';
-            if (isVisible) {
-                this.hideMenu();
-            } else {
-                this.showMenu();
-            }
+            const visible = menu.style.opacity === '1';
+            visible ? this.hideMenu() : this.showMenu();
         }
 
         static showMenu() {
             const menu = document.getElementById(CONFIG.MENU_ID);
             if (!menu) return;
             menu.style.opacity = '1';
-            menu.style.transform = 'translateY(0)';
+            menu.style.transform = 'translateX(0) translateY(-50%)';
             menu.style.pointerEvents = 'auto';
         }
 
@@ -614,7 +649,7 @@
             const menu = document.getElementById(CONFIG.MENU_ID);
             if (!menu) return;
             menu.style.opacity = '0';
-            menu.style.transform = 'translateY(10px)';
+            menu.style.transform = 'translateX(10px) translateY(-50%)';
             menu.style.pointerEvents = 'none';
         }
 
