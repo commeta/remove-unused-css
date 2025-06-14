@@ -1288,15 +1288,7 @@ try {
         fwrite($lockFp, json_encode($lockData) . "\n");
         fflush($lockFp);        
     }
-    
-    // Логируем успешное получение блокировки
-    error_log(sprintf(
-        "[LOCK] Acquired by PID %d, SAPI: %s, Method: %s",
-        getmypid(),
-        PHP_SAPI,
-        $useFileLocking ? 'file_locking' : 'flock'
-    ));
-    
+   
     // === ОСНОВНОЙ КОД ЗАДАЧИ ===
     $processor = new RemoveUnusedCSSProcessor();
     $processor->processRequest();
@@ -1323,15 +1315,6 @@ try {
         'sapi'    => PHP_SAPI
     ], JSON_UNESCAPED_UNICODE);
     
-    error_log(sprintf(
-        "[CRITICAL ERROR] %s in %s:%d (SAPI: %s, PID: %d)\n%s\n",
-        $e->getMessage(),
-        $e->getFile(),
-        $e->getLine(),
-        PHP_SAPI,
-        getmypid(),
-        $e->getTraceAsString()
-    ));
     exit;
     
 } finally {
@@ -1340,11 +1323,9 @@ try {
         if ($useFileLocking) {
             fclose($lockFp);
             @unlink(LOCK_FILE);
-            error_log("[LOCK] Released file lock by PID " . getmypid());
         } else {
             flock($lockFp, LOCK_UN);
             fclose($lockFp);
-            error_log("[LOCK] Released flock by PID " . getmypid());
         }
     }
 }
