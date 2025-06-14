@@ -495,7 +495,7 @@ class RemoveUnusedCSSProcessor
                 if (self::CSS_MINIFY) {
                     $minifiedCss = $cssDocument->render(OutputFormat::createCompact());
                 } else {
-                    $minifiedCss = $cssDocument->render();
+                    $minifiedCss = $cssDocument->render(OutputFormat::createPretty());
                 }
 
                 if (file_put_contents($cleanCssPath, $minifiedCss) !== false) {
@@ -532,7 +532,7 @@ class RemoveUnusedCSSProcessor
                 if (self::CSS_COMBINED_MINIFY) {
                     $finalCombinedContent = $docCombined->render(OutputFormat::createCompact());
                 } else {
-                    $finalCombinedContent = $docCombined->render();
+                    $finalCombinedContent = $docCombined->render(OutputFormat::createPretty());
                 }
 
             } catch (Exception $e) {
