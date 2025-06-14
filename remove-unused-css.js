@@ -775,28 +775,66 @@
 
         static showDetailedReport(data) {
             let totalSelectors = 0;
-            let reportHtml = '<div style="font-family:monospace;font-size:12px;line-height:1.4;">';
-            reportHtml += '<h3 style="margin:0 0 10px 0;color:#fff;">🔍 Отчет о неиспользуемых селекторах</h3>';
-            reportHtml += '<div style="margin-bottom:10px;padding:8px;background:#f8f9fa;border-radius:4px;color:#000;">';
-            reportHtml += '<strong>⚠️ Внимание:</strong> Показаны селекторы на основе текущих настроек фильтрации.';
-            reportHtml += '</div>';
+            let reportHtml = '<div style="'
+                + 'position:relative;'
+                + 'font-family:monospace;font-size:12px;line-height:1.4;'
+                + 'width:calc(100vw - 20px);max-width:400px;'
+                + 'margin:10px auto;'
+                + 'box-sizing:border-box;'
+                + 'padding:20px 30px 10px;'
+                + 'background:#222;border-radius:6px;'
+                + 'color:#fff;'
+                + 'overflow-y:auto;max-height:calc(100vh - 80px);'
+                + '">';
+
+            reportHtml += '<h3 style="margin:0 0 8px;font-size:18px;color:#f1c40f;">'
+                + '🔍 Отчет о неиспользуемых селекторах'
+                + '</h3>';
+
+            reportHtml += '<div style="margin-bottom:10px;padding:8px;'
+                + 'background:#f8f9fa;border-radius:4px;'
+                + 'color:#000;font-size:12px;">'
+                + '<strong>⚠️ Внимание:</strong> Показаны селекторы на основе текущих настроек фильтрации.'
+                + '</div>';
+
             for (const [file, selectors] of Object.entries(data)) {
                 if (selectors.length === 0) continue;
                 totalSelectors += selectors.length;
-                reportHtml += `<div style="margin-bottom:10px;border:1px solid #ddd;border-radius:4px;padding:8px;">`;
-                reportHtml += `<strong style="color:#fff;font-weight:bolder;">📄 ${file}</strong> (${selectors.length} селекторов)<br>`;
-                const selectorList = selectors.slice(0, 10).map(s => s.selector).join(', ');
-                reportHtml += `<small style="color:#fff;">${selectorList}`;
+
+                reportHtml += '<div style="margin-bottom:10px;'
+                    + 'border:1px solid #444;border-radius:4px;'
+                    + 'padding:8px;word-break:break-word;'
+                    + 'background:#333;">'
+                    + '<strong style="display:block;color:#8ab4f8;'
+                    + 'margin-bottom:4px;">'
+                    + '📄 ' + file + ' (' + selectors.length + ' селекторов)'
+                    + '</strong>';
+
+                let list = selectors.slice(0, 10).map(s => s.selector).join(', ');
                 if (selectors.length > 10) {
-                    reportHtml += ` ... и еще ${selectors.length - 10}`;
+                    list += ' ... и еще ' + (selectors.length - 10);
                 }
-                reportHtml += '</small></div>';
+                reportHtml += '<small style="display:block;color:#ccc;'
+                    + 'font-size:12px;">'
+                    + list
+                    + '</small>'
+                    + '</div>';
             }
-            reportHtml += `<div style="margin-top:10px;padding:8px;background:#e8f5e8;border-radius:4px;border:1px solid #4caf50;color:#000;">`;
-            reportHtml += `<strong>📊 Итого: ${totalSelectors} селекторов в ${Object.keys(data).length} файлах</strong>`;
-            reportHtml += '</div></div>';
+
+            reportHtml += '<div style="margin-top:10px;padding:8px;'
+                + 'background:#e8f5e8;border-radius:4px;'
+                + 'border:1px solid #4caf50;color:#000;'
+                + 'font-size:12px;">'
+                + '<strong>📊 Итого: ' + totalSelectors
+                + ' селекторов в ' + Object.keys(data).length + ' файлах</strong>'
+                + '</div>';
+
+            reportHtml += '</div>';
+
             this.showLargeNotification(reportHtml, 'info', true);
         }
+
+
 
         static async saveDataToServer(data) {
             try {
