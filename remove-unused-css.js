@@ -30,7 +30,7 @@
         CRAWLER_STATUS_KEY: 'crawler_status',
         MAX_CRAWL_DEPTH: 5,
         CRAWL_DELAY: 3000,
-        MAX_URLS_PER_SESSION: 100,
+        MAX_URLS_PER_SESSION: 1000,
 
         TAB_HEARTBEAT_INTERVAL: 5000,
         URL_LEASE_TIMEOUT: 30000,
@@ -45,6 +45,10 @@
     let state = {
         // Map для хранения неиспользованных селекторов: ключ — селектор, значение — детали использования
         unusedSelectors: new Map(),
+
+        unusedKeyframes: new Map(),
+        unusedFontFaces: new Map(),
+        unusedCounterStyles: new Map(),
 
         // Map для информации о стилевых таблицах (CSS-файлах): ключ — URL или путь, значение — объект с метаданными
         styleSheetsInfo: new Map(),
@@ -246,6 +250,8 @@
 
         static checkSelectorsUsage() {
             let unusedCount = 0;
+            
+            // Проверка обычных селекторов
             for (const [selector, info] of state.unusedSelectors.entries()) {
                 if (!info.used) {
                     try {
@@ -260,20 +266,234 @@
                     }
                 }
             }
+            
+            // Проверка keyframes
+            for (const [name, info] of state.unusedKeyframes.entries()) {
+                if (!info.used) {
+                    const isUsed = SelectorManager.checkKeyframeUsage(name);
+                    if (isUsed) {
+                        info.used = true;
+                    } else {
+                        unusedCount++;
+                    }
+                }
+            }
+            
+            // Проверка font-face
+            for (const [fontFamily, info] of state.unusedFontFaces.entries()) {
+                if (!info.used) {
+                    const isUsed = SelectorManager.checkFontFaceUsage(fontFamily);
+                    if (isUsed) {
+                        info.used = true;
+                    } else {
+                        unusedCount++;
+                    }
+                }
+            }
+            
+            // Проверка counter-style
+            for (const [name, info] of state.unusedCounterStyles.entries()) {
+                if (!info.used) {
+                    const isUsed = SelectorManager.checkCounterStyleUsage(name);
+                    if (isUsed) {
+                        info.used = true;
+                    } else {
+                        unusedCount++;
+                    }
+                }
+            }
+            
             state.totalUnusedCount = unusedCount;
             UIManager.updateButton(unusedCount);
         }
 
+        // Проверка использования keyframe
+        static checkKeyframeUsage(keyframeName) {
+            try {
+                // Проверяем все элементы на наличие animation-name
+                const elements = document.querySelectorAll('*');
+                for (const element of elements) {
+                    const computedStyle = window.getComputedStyle(element);
+                    const animationName = computedStyle.getPropertyValue('animation-name');
+                    
+                    if (animationName && animationName !== 'none') {
+                        const names = animationName.split(',').map(n => n.trim());
+                        if (names.includes(keyframeName)) {
+                            return true;
+                        }
+                    }
+                }
+                
+                // Проверяем inline стили
+                const inlineElements = document.querySelectorAll('[style*="animation"]');
+                for (const element of inlineElements) {
+                    const style = element.getAttribute('style');
+                    if (style && style.includes(keyframeName)) {
+                        return true;
+                    }
+                }
+                
+                return false;
+            } catch (error) {
+                console.warn('Ошибка проверки keyframe:', error);
+                return true; // Считаем используемым при ошибке
+            }
+        }
+
+        // Проверка использования font-face
+        static checkFontFaceUsage(fontFamily) {
+            try {
+                // Проверяем все элементы на наличие font-family
+                const elements = document.querySelectorAll('*');
+                for (const element of elements) {
+                    const computedStyle = window.getComputedStyle(element);
+                    const fontFamilyValue = computedStyle.getPropertyValue('font-family');
+                    
+                    if (fontFamilyValue) {
+                        const fonts = fontFamilyValue.split(',').map(f => f.trim().replace(/['"]/g, ''));
+                        if (fonts.includes(fontFamily)) {
+                            return true;
+                        }
+                    }
+                }
+                
+                // Проверяем inline стили
+                const inlineElements = document.querySelectorAll('[style*="font-family"]');
+                for (const element of inlineElements) {
+                    const style = element.getAttribute('style');
+                    if (style && style.includes(fontFamily)) {
+                        return true;
+                    }
+                }
+                
+                return false;
+            } catch (error) {
+                console.warn('Ошибка проверки font-face:', error);
+                return true; // Считаем используемым при ошибке
+            }
+        }
+
+        // Проверка использования counter-style
+        static checkCounterStyleUsage(counterStyleName) {
+            try {
+                // Проверяем все элементы на наличие list-style-type или counter-reset/counter-increment
+                const elements = document.querySelectorAll('*');
+                for (const element of elements) {
+                    const computedStyle = window.getComputedStyle(element);
+                    
+                    const listStyleType = computedStyle.getPropertyValue('list-style-type');
+                    if (listStyleType === counterStyleName) {
+                        return true;
+                    }
+                    
+                    const counterReset = computedStyle.getPropertyValue('counter-reset');
+                    if (counterReset && counterReset.includes(counterStyleName)) {
+                        return true;
+                    }
+                    
+                    const counterIncrement = computedStyle.getPropertyValue('counter-increment');
+                    if (counterIncrement && counterIncrement.includes(counterStyleName)) {
+                        return true;
+                    }
+                }
+                
+                return false;
+            } catch (error) {
+                console.warn('Ошибка проверки counter-style:', error);
+                return true; // Считаем используемым при ошибке
+            }
+        }        
+
         static groupSelectorsByFile() {
             const grouped = {};
+            
+            // Обычные селекторы
             for (const [selector, info] of state.unusedSelectors.entries()) {
-                if (info.used) continue;
                 const href = info.href;
                 if (!grouped[href]) grouped[href] = [];
-                grouped[href].push({ selector, media: info.media });
+                grouped[href].push({ 
+                    selector, 
+                    media: info.media,
+                    used: info.used 
+                });
             }
+            
+            // Keyframes
+            for (const [keyframeName, info] of state.unusedKeyframes.entries()) {
+                const href = info.href;
+                if (!grouped[href]) grouped[href] = [];
+                grouped[href].push({ 
+                    keyframes: keyframeName,
+                    used: info.used 
+                });
+            }
+            
+            // Font-faces
+            for (const [fontFamily, info] of state.unusedFontFaces.entries()) {
+                const href = info.href;
+                if (!grouped[href]) grouped[href] = [];
+                grouped[href].push({ 
+                    'font-face': fontFamily,
+                    used: info.used 
+                });
+            }
+            
+            // Counter-styles
+            for (const [counterStyleName, info] of state.unusedCounterStyles.entries()) {
+                const href = info.href;
+                if (!grouped[href]) grouped[href] = [];
+                grouped[href].push({ 
+                    'counter-style': counterStyleName,
+                    used: info.used 
+                });
+            }
+            
             return grouped;
         }
+
+
+        //  keyframe для отслеживания
+        static addKeyframe(name, href) {
+            if (!name || !state.settings.keyframes) return;
+            const relativePath = CSSUtils.getRelativePathFromHref(href);
+            if (!state.currentPageSelectors.has(relativePath)) return;
+            
+            if (!state.unusedKeyframes.has(name)) {
+                state.unusedKeyframes.set(name, {
+                    href: relativePath,
+                    used: false
+                });
+            }
+        }
+
+        //  font-face для отслеживания
+        static addFontFace(fontFamily, href) {
+            if (!fontFamily || !state.settings.font_face) return;
+            const relativePath = CSSUtils.getRelativePathFromHref(href);
+            if (!state.currentPageSelectors.has(relativePath)) return;
+            
+            if (!state.unusedFontFaces.has(fontFamily)) {
+                state.unusedFontFaces.set(fontFamily, {
+                    href: relativePath,
+                    used: false
+                });
+            }
+        }
+
+        //  counter-style для отслеживания
+        static addCounterStyle(name, href) {
+            if (!name || !state.settings.counter_style) return;
+            const relativePath = CSSUtils.getRelativePathFromHref(href);
+            if (!state.currentPageSelectors.has(relativePath)) return;
+            
+            if (!state.unusedCounterStyles.has(name)) {
+                state.unusedCounterStyles.set(name, {
+                    href: relativePath,
+                    used: false
+                });
+            }
+        }
+        
     }
 
     // Processing CSS rules and stylesheets
@@ -324,10 +544,46 @@
                     }
                     break;
                 case CSSRule.KEYFRAMES_RULE:
+                    // Обработка keyframes
+                    if (rule.name && state.settings.keyframes) {
+                        SelectorManager.addKeyframe(rule.name, href);
+                    }
+                    break;
                 case CSSRule.FONT_FACE_RULE:
+                    // Обработка font-face
+                    if (state.settings.font_face) {
+                        const fontFamily = this.extractFontFamily(rule);
+                        if (fontFamily) {
+                            SelectorManager.addFontFace(fontFamily, href);
+                        }
+                    }
+                    break;
+                case 11: // CSSRule.COUNTER_STYLE_RULE (не все браузеры поддерживают константу)
+                    // Обработка counter-style
+                    if (rule.name && state.settings.counter_style) {
+                        SelectorManager.addCounterStyle(rule.name, href);
+                    }
+                    break;
                 case CSSRule.PAGE_RULE:
                 case CSSRule.NAMESPACE_RULE:
                     break;
+            }
+        }
+
+        static extractFontFamily(fontFaceRule) {
+            try {
+                const style = fontFaceRule.style;
+                const fontFamily = style.getPropertyValue('font-family');
+                
+                if (fontFamily) {
+                    // Убираем кавычки и лишние пробелы
+                    return fontFamily.replace(/['"]/g, '').trim();
+                }
+                
+                return null;
+            } catch (error) {
+                console.warn('Ошибка извлечения font-family:', error);
+                return null;
             }
         }
 
@@ -659,6 +915,9 @@
             if (action === 'reset') {
                 if (confirm('Вы уверены, что хотите сбросить все данные? Это действие нельзя отменить!')) {
                     state.unusedSelectors.clear();
+                    state.unusedKeyframes.clear();
+                    state.unusedFontFaces.clear();
+                    state.unusedCounterStyles.clear();
                     state.styleSheetsInfo.clear();
                     state.totalUnusedCount = 0;
                     state.currentPageSelectors.clear();
