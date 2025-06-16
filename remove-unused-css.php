@@ -42,10 +42,10 @@ class RemoveUnusedCSSProcessor
     private const SELECTORS_FILE = 'data/unused_selectors.json'; // Путь к JSON-файлу, где хранятся все найденные неиспользуемые селекторы
     private const CSS_DIR = 'css/'; // Каталог, в который записываются очищенные (минимизированные) CSS-файлы
     private const COMBINED_FILE = 'remove-unused-css.min.css'; // Имя объединённого файла со всеми минимизированными стилями
-    private const MAX_FILE_SIZE = 100 * 1024 * 1024; // Максимально допустимый размер обрабатываемого CSS-файла (100 МБ)
+    private const MAX_FILE_SIZE = 32 * 1024 * 1024; // Максимально допустимый размер обрабатываемого CSS-файла (32 МБ)
     private const BACKUP_DIR = 'backup/'; // Каталог для бэкапов предыдущих версий очищенных CSS-файлов
     private const SETTINGS_FILE = 'data/settings.json'; // Путь к JSON-файлу с пользовательскими настройками фильтрации
-    private const MAX_INPUT_SIZE    = 15 * 1024 * 1024; // Максимальный размер JSON-пэйлоада (15 МБ)
+    private const MAX_INPUT_SIZE    = 16 * 1024 * 1024; // Максимальный размер JSON-пэйлоада (16 МБ)
     private const JSON_DECODE_DEPTH = 512; // Максимальная глубина вложенности при декодировании JSON
 
     private const CSS_MINIFY = true;           // минимизировать individual файлы
@@ -295,12 +295,18 @@ class RemoveUnusedCSSProcessor
 
     private function saveMasterSelectors(array $masterSelectors): void
     {
+        // Очищаем мастер-список перед сохранением (оставляем только unused)
+        $cleanedSelectors = $masterSelectors;
+        $this->cleanupMasterSelectors($cleanedSelectors);
+        
         $selectorsPath = $this->baseDir . '/' . self::SELECTORS_FILE;
         $this->ensureDirectoryExists(dirname($selectorsPath));
-        $json = json_encode($masterSelectors, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+        
+        $json = json_encode($cleanedSelectors, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
         if ($json === false) {
             throw new RuntimeException('Не удалось сериализовать селекторы в JSON');
         }
+        
         if (file_put_contents($selectorsPath, $json, LOCK_EX) === false) {
             throw new RuntimeException('Не удалось сохранить файл селекторов');
         }
@@ -308,44 +314,110 @@ class RemoveUnusedCSSProcessor
 
     private function updateSelectorsUsage(array &$masterSelectors, array $selectorsData): void
     {
-        foreach ($selectorsData as $relativePath => $selectors) {
+        foreach ($selectorsData as $relativePath => $items) {
             $normalizedPath = $this->normalizeFilePath($relativePath);
             if ($normalizedPath === null) {
                 continue;
             }
 
+            // Инициализация структуры файла если её нет
             if (!isset($masterSelectors[$normalizedPath])) {
-                $masterSelectors[$normalizedPath] = [];
+                $masterSelectors[$normalizedPath] = [
+                    'selectors' => [],
+                    'keyframes' => [],
+                    'font_faces' => [],
+                    'counter_styles' => []
+                ];
+                
+                // Инициализация всех селекторов из CSS файла
                 $fullPath = $this->getFullFilePath($normalizedPath);
                 if ($fullPath && file_exists($fullPath)) {
                     $this->initializeFileSelectors($fullPath, $masterSelectors[$normalizedPath]);
                 }
             }
-            foreach ($selectors as $selectorInfo) {
-                $selector = $selectorInfo['selector'] ?? '';
-                if ($selector && isset($masterSelectors[$normalizedPath][$selector])) {
-                    $masterSelectors[$normalizedPath][$selector] = 'used';
+
+            // Обработка данных от клиента
+            foreach ($items as $item) {
+                if (isset($item['selector'])) {
+                    $selector = $item['selector'];
+                    $used = $item['used'] ?? true;
+                    
+                    if ($selector) {
+                        // Если селектор используется - помечаем как used или удаляем из списка неиспользуемых
+                        if ($used) {
+                            // Если был помечен как неиспользуемый, убираем эту пометку
+                            if (isset($masterSelectors[$normalizedPath]['selectors'][$selector])) {
+                                $masterSelectors[$normalizedPath]['selectors'][$selector] = 'used';
+                            }
+                        } else {
+                            // Селектор не используется - добавляем/обновляем в списке
+                            $masterSelectors[$normalizedPath]['selectors'][$selector] = 'unused';
+                        }
+                    }
+                }
+                elseif (isset($item['keyframes'])) {
+                    $keyframeName = $item['keyframes'];
+                    $used = $item['used'] ?? true;
+                    
+                    if ($keyframeName) {
+                        if ($used) {
+                            if (isset($masterSelectors[$normalizedPath]['keyframes'][$keyframeName])) {
+                                $masterSelectors[$normalizedPath]['keyframes'][$keyframeName] = 'used';
+                            }
+                        } else {
+                            $masterSelectors[$normalizedPath]['keyframes'][$keyframeName] = 'unused';
+                        }
+                    }
+                }
+                elseif (isset($item['font-face'])) {
+                    $fontName = $item['font-face'];
+                    $used = $item['used'] ?? true;
+                    
+                    if ($fontName) {
+                        if ($used) {
+                            if (isset($masterSelectors[$normalizedPath]['font_faces'][$fontName])) {
+                                $masterSelectors[$normalizedPath]['font_faces'][$fontName] = 'used';
+                            }
+                        } else {
+                            $masterSelectors[$normalizedPath]['font_faces'][$fontName] = 'unused';
+                        }
+                    }
+                }
+                elseif (isset($item['counter-style'])) {
+                    $counterName = $item['counter-style'];
+                    $used = $item['used'] ?? true;
+                    
+                    if ($counterName) {
+                        if ($used) {
+                            if (isset($masterSelectors[$normalizedPath]['counter_styles'][$counterName])) {
+                                $masterSelectors[$normalizedPath]['counter_styles'][$counterName] = 'used';
+                            }
+                        } else {
+                            $masterSelectors[$normalizedPath]['counter_styles'][$counterName] = 'unused';
+                        }
+                    }
                 }
             }
         }
     }
 
-    private function initializeFileSelectors(string $filePath, array &$selectors): void
+    private function initializeFileSelectors(string $filePath, array &$fileData): void
     {
         try {
             $cssContent = file_get_contents($filePath);
             if ($cssContent === false) {
                 throw new RuntimeException("Не удалось прочитать файл: {$filePath}");
             }
+
             $parser = new Parser($cssContent);
             $cssDocument = $parser->parse();
-            $this->collectSelectorsFromDocument($cssDocument, $selectors);
+            $this->collectSelectorsFromDocument($cssDocument, $fileData);
         } catch (Exception $e) {
             $this->errors[] = "Ошибка инициализации селекторов для файла {$filePath}: " . $e->getMessage();
         }
     }
 
-    private function collectSelectorsFromDocument($cssDocument, array &$selectors): void
+    private function collectSelectorsFromDocument($cssDocument, array &$fileData): void
     {
         foreach ($cssDocument->getContents() as $rule) {
             if ($rule instanceof DeclarationBlock) {
@@ -353,17 +425,79 @@ class RemoveUnusedCSSProcessor
                 foreach ($selectorObjects as $selectorObject) {
                     $selector = trim((string)$selectorObject);
                     if (!empty($selector)) {
-                        $selectors[$selector] = $this->isSelectorSafeToRemove($selector) ? 'unused' : 'used';
+                        // Инициализируем все селекторы как 'used' - они станут 'unused' только если клиент явно это укажет
+                        if (!isset($fileData['selectors'][$selector])) {
+                            $fileData['selectors'][$selector] = 'used';
+                        }
                     }
                 }
             } elseif ($rule instanceof AtRuleBlockList || $rule instanceof AtRuleSet) {
-                // Рекурсивно обрабатываем at-правила, которые могут содержать селекторы
+                $atRuleName = strtolower($rule->atRuleName());
+
+                if ($atRuleName === 'keyframes' && $this->settings['keyframes']) {
+                    $keyframeName = $this->extractAtRuleIdentifier($rule);
+                    if ($keyframeName && !isset($fileData['keyframes'][$keyframeName])) {
+                        $fileData['keyframes'][$keyframeName] = 'used';
+                    }
+                }
+                elseif ($atRuleName === 'font-face' && $this->settings['font_face']) {
+                    $fontName = $this->extractFontFaceName($rule);
+                    if ($fontName && !isset($fileData['font_faces'][$fontName])) {
+                        $fileData['font_faces'][$fontName] = 'used';
+                    }
+                }
+                elseif ($atRuleName === 'counter-style' && $this->settings['counter_style']) {
+                    $counterName = $this->extractAtRuleIdentifier($rule);
+                    if ($counterName && !isset($fileData['counter_styles'][$counterName])) {
+                        $fileData['counter_styles'][$counterName] = 'used';
+                    }
+                }
+
+                // Рекурсивная обработка вложенных правил
                 if (method_exists($rule, 'getContents')) {
-                    $this->collectSelectorsFromDocument($rule, $selectors);
+                    $this->collectSelectorsFromDocument($rule, $fileData);
                 }
             }
         }
     }
+
+    private function extractAtRuleIdentifier($rule): ?string
+    {
+        if (method_exists($rule, 'getRule')) {
+            $ruleValue = $rule->getRule();
+            if ($ruleValue) {
+                // Извлекаем имя из строки правила
+                $ruleString = trim((string)$ruleValue);
+                return $ruleString ?: null;
+            }
+        }
+        return null;
+    }
+
+    private function extractFontFaceName($fontFaceRule): ?string
+    {
+        if (!method_exists($fontFaceRule, 'getContents')) {
+            return null;
+        }
+        
+        // Ищем font-family в декларациях @font-face
+        foreach ($fontFaceRule->getContents() as $rule) {
+            if ($rule instanceof DeclarationBlock) {
+                foreach ($rule->getRules() as $declaration) {
+                    if (strtolower($declaration->getRule()) === 'font-family') {
+                        $value = $declaration->getValue();
+                        if ($value instanceof CSSString) {
+                            return $value->getString();
+                        } elseif (is_string($value)) {
+                            return trim($value, '\'"');
+                        }
+                    }
+                }
+            }
+        }
+        
+        return null;
+    }    
 
     /**
      * Нормализует входной путь, убирая query/fragment и ведущие слэши,
@@ -464,14 +598,14 @@ class RemoveUnusedCSSProcessor
         $cssDir = $this->baseDir . '/' . self::CSS_DIR;
         $this->ensureDirectoryExists($cssDir);
 
-        $combinedContent        = '';
-        $importCharset          = '';
-        $totalOriginalSize      = 0;
-        $totalFinalSize         = 0;
-        $totalRemovedSelectors  = 0;
-        $generatedFileCount     = 0;
+        $combinedContent = '';
+        $importCharset = '';
+        $totalOriginalSize = 0;
+        $totalFinalSize = 0;
+        $totalRemovedSelectors = 0;
+        $generatedFileCount = 0;
 
-        foreach ($masterSelectors as $relativePath => $selectors) {
+        foreach ($masterSelectors as $relativePath => $fileData) {
             try {
                 $fullPath = $this->getFullFilePath($relativePath);
                 if (!$fullPath || !file_exists($fullPath) || !is_readable($fullPath)) {
@@ -482,16 +616,15 @@ class RemoveUnusedCSSProcessor
                 $originalSize = filesize($fullPath);
                 $totalOriginalSize += $originalSize;
 
-                $result = $this->processFile($fullPath, $selectors);
+                $result = $this->processFile($fullPath, $fileData);
                 if (!isset($result['cssDocument'])) {
                     continue;
                 }
 
-                $cssDocument   = $result['cssDocument'];
-                $cleanCssPath  = $cssDir . $relativePath;
+                $cssDocument = $result['cssDocument'];
+                $cleanCssPath = $cssDir . $relativePath;
                 $this->ensureDirectoryExists(dirname($cleanCssPath));
 
-                // Рендерим/минифицируем каждый файл отдельно
                 if (self::CSS_MINIFY) {
                     $minifiedCss = $cssDocument->render(OutputFormat::createCompact());
                 } else {
@@ -499,42 +632,37 @@ class RemoveUnusedCSSProcessor
                 }
 
                 if (file_put_contents($cleanCssPath, $minifiedCss) !== false) {
-                    $this->processedFiles[]     = $relativePath;
+                    $this->processedFiles[] = $relativePath;
                     $generatedFileCount++;
-                    $finalSize         = strlen($minifiedCss);
-                    $totalFinalSize   += $finalSize;
+                    $finalSize = strlen($minifiedCss);
+                    $totalFinalSize += $finalSize;
                     $totalRemovedSelectors += $result['removed_selectors'] ?? 0;
-                    $importCharset   .= $result['import_charset'] ?? '';
+
+                    $importCharset .= $result['import_charset'] ?? '';
                     $combinedContent .= $minifiedCss . "\n\n";
                 } else {
                     $this->errors[] = "Не удалось сохранить файл: {$cleanCssPath}";
                 }
-
             } catch (Exception $e) {
                 $this->errors[] = "Ошибка обработки файла {$relativePath}: " . $e->getMessage();
             }
         }
 
-        // Блок объединённого CSS с исправлением путей и опциональной минификацией
+        // Обработка объединенного файла (остается без изменений)
         if (!empty($combinedContent)) {
-            $combinedPath          = $cssDir . self::COMBINED_FILE;
-            $finalCombinedContent  = $importCharset . $combinedContent;
-
+            $combinedPath = $cssDir . self::COMBINED_FILE;
+            $finalCombinedContent = $importCharset . $combinedContent;
             try {
                 $parserCombined = new Parser($finalCombinedContent);
-                $docCombined    = $parserCombined->parse();
-
-                // Исправляем пути в объединённом файле, если включена настройка
+                $docCombined = $parserCombined->parse();
                 if (defined('self::FIX_PATHS_COMBINED') && self::FIX_PATHS_COMBINED) {
                     $this->fixPathsInCssDocument($docCombined, $this->documentRoot);
                 }
-
                 if (self::CSS_COMBINED_MINIFY) {
                     $finalCombinedContent = $docCombined->render(OutputFormat::createCompact());
                 } else {
                     $finalCombinedContent = $docCombined->render(OutputFormat::createPretty());
                 }
-
             } catch (Exception $e) {
                 $this->errors[] = "Не удалось обработать объединённый CSS: " . $e->getMessage();
             }
@@ -545,20 +673,18 @@ class RemoveUnusedCSSProcessor
             } else {
                 $this->errors[] = "Не удалось создать объединённый файл: {$combinedPath}";
             }
-
             $this->statistics['combined_size'] = $combinedSize;
         } else {
             $this->statistics['combined_size'] = 0;
         }
 
-        // Итоговые статистики
         $this->statistics = array_merge($this->statistics, [
-            'processed_files'   => count($this->processedFiles),
-            'generated_files'   => $generatedFileCount,
-            'combined_file'     => !empty($combinedContent),
-            'original_size'     => $totalOriginalSize,
-            'final_size'        => $totalFinalSize,
-            'bytes_saved'       => $totalOriginalSize - $totalFinalSize,
+            'processed_files' => count($this->processedFiles),
+            'generated_files' => $generatedFileCount,
+            'combined_file' => !empty($combinedContent),
+            'original_size' => $totalOriginalSize,
+            'final_size' => $totalFinalSize,
+            'bytes_saved' => $totalOriginalSize - $totalFinalSize,
             'selectors_removed' => $totalRemovedSelectors,
         ]);
     }
@@ -572,7 +698,7 @@ class RemoveUnusedCSSProcessor
      * @return array|null Массив с ключами 'cssDocument', 'removed_selectors', 'import_charset' или null.
      * @throws RuntimeException В случае ошибок чтения, размера файла или парсинга.
      */
-    private function processFile(string $filePath, array $selectors): ?array
+    private function processFile(string $filePath, array $fileData): ?array
     {
         $fileSize = filesize($filePath);
         if ($fileSize === false || $fileSize > self::MAX_FILE_SIZE) {
@@ -585,25 +711,20 @@ class RemoveUnusedCSSProcessor
         }
 
         try {
-            // Первый парсинг содержимого
             $parser = new Parser($cssContent);
             $cssDocument = $parser->parse();
 
-            // 1) Исправляем пути (Parser‑based)
             if (self::FIX_PATHS_INDIVIDUAL) {
                 $this->fixPathsInCssDocument($cssDocument, $filePath);
             }
 
-            // 2) Удаляем неиспользуемые селекторы
             $importCharset = '';
-            $removedSelectors = $this->removeUnusedRules($cssDocument, $selectors, $importCharset);
+            $removedSelectors = $this->removeUnusedRules($cssDocument, $fileData, $importCharset);
 
-            // 3) Дополнительная пост‑обработка через регулярки
             if (self::FIX_PATHS_INDIVIDUAL) {
-                $originalDir   = dirname($filePath);
-                $documentRoot  = realpath($this->documentRoot);
-                $relativeDir   = '';
-
+                $originalDir = dirname($filePath);
+                $documentRoot = realpath($this->documentRoot);
+                $relativeDir = '';
                 if ($documentRoot && strpos($originalDir, $documentRoot) === 0) {
                     $relativeDir = trim(substr($originalDir, strlen($documentRoot)), DIRECTORY_SEPARATOR);
                     if ($relativeDir !== '') {
@@ -611,20 +732,18 @@ class RemoveUnusedCSSProcessor
                     }
                 }
 
-                // Рендерим CSS, применяем regexp‑патчи и при изменении повторно парсим
                 $renderedCSS = $cssDocument->render();
                 $processedCSS = $this->postProcessCSSContent($renderedCSS, $relativeDir);
-
                 if ($processedCSS !== $renderedCSS) {
-                    $parser     = new Parser($processedCSS);
+                    $parser = new Parser($processedCSS);
                     $cssDocument = $parser->parse();
                 }
             }
 
             return [
-                'cssDocument'      => $cssDocument,
+                'cssDocument' => $cssDocument,
                 'removed_selectors'=> $removedSelectors,
-                'import_charset'   => $importCharset,
+                'import_charset' => $importCharset,
             ];
         } catch (Exception $e) {
             throw new RuntimeException("Ошибка парсинга CSS в файле {$filePath}: " . $e->getMessage());
@@ -632,15 +751,15 @@ class RemoveUnusedCSSProcessor
     }
 
 
-    private function removeUnusedRules($cssDocument, array $selectors, string &$importCharset): int
+    private function removeUnusedRules($cssDocument, array $fileData, string &$importCharset): int
     {
         $contents = $cssDocument->getContents();
         $toRemove = [];
         $removedCount = 0;
-        
+
         foreach ($contents as $rule) {
             if ($rule instanceof DeclarationBlock) {
-                $result = $this->processDeclarationBlock($rule, $selectors);
+                $result = $this->processDeclarationBlock($rule, $fileData['selectors'] ?? []);
                 if ($result['remove']) {
                     $toRemove[] = $rule;
                     $removedCount += $result['count'];
@@ -655,13 +774,20 @@ class RemoveUnusedCSSProcessor
                     $toRemove[] = $rule;
                     continue;
                 }
-                
+
+                // Проверка специальных @-правил на удаление
+                if ($this->shouldRemoveAtRule($rule, $atRuleType, $fileData)) {
+                    $toRemove[] = $rule;
+                    $removedCount++;
+                    continue;
+                }
+
                 if ($this->shouldPreserveAtRule($atRuleType)) {
                     continue;
                 }
-                
+
                 if (in_array($atRuleType, ['supports', 'media', 'document', 'layer', 'container'])) {
-                    $removedCount += $this->removeUnusedRules($rule, $selectors, $importCharset);
+                    $removedCount += $this->removeUnusedRules($rule, $fileData, $importCharset);
                     if (empty($rule->getContents())) {
                         $toRemove[] = $rule;
                     }
@@ -670,12 +796,41 @@ class RemoveUnusedCSSProcessor
                 }
             }
         }
-        
+
         foreach ($toRemove as $rule) {
             $cssDocument->remove($rule);
         }
-        
+
         return $removedCount;
+    }
+
+    private function shouldRemoveAtRule($rule, string $atRuleType, array $fileData): bool
+    {
+        // Проверка @keyframes
+        if ($atRuleType === 'keyframes' && isset($fileData['keyframes'])) {
+            $keyframeName = $this->extractAtRuleIdentifier($rule);
+            if ($keyframeName && isset($fileData['keyframes'][$keyframeName])) {
+                return $fileData['keyframes'][$keyframeName] === 'unused';
+            }
+        }
+        
+        // Проверка @font-face
+        if ($atRuleType === 'font-face' && isset($fileData['font_faces'])) {
+            $fontName = $this->extractFontFaceName($rule);
+            if ($fontName && isset($fileData['font_faces'][$fontName])) {
+                return $fileData['font_faces'][$fontName] === 'unused';
+            }
+        }
+        
+        // Проверка @counter-style
+        if ($atRuleType === 'counter-style' && isset($fileData['counter_styles'])) {
+            $counterName = $this->extractAtRuleIdentifier($rule);
+            if ($counterName && isset($fileData['counter_styles'][$counterName])) {
+                return $fileData['counter_styles'][$counterName] === 'unused';
+            }
+        }
+        
+        return false;
     }
 
     private function shouldPreserveAtRule(string $atRuleType): bool
@@ -704,22 +859,57 @@ class RemoveUnusedCSSProcessor
         $selectorObjects = $block->getSelectors();
         $usedSelectors = [];
         $removedCount = 0;
+
         foreach ($selectorObjects as $selectorObj) {
             $selector = trim((string)$selectorObj);
-            if ($this->isSelectorSafeToRemove($selector) && (!isset($selectors[$selector]) || $selectors[$selector] === 'unused')) {
+            
+            // Удаляем селектор только если:
+            // 1. Он безопасен для удаления (не критический)
+            // 2. И он явно помечен как 'unused' в мастер-списке
+            if ($this->isSelectorSafeToRemove($selector) && 
+                isset($selectors[$selector]) && 
+                $selectors[$selector] === 'unused') {
                 $removedCount++;
-                continue;
+                continue; // Пропускаем этот селектор (удаляем его)
             }
+            
+            // Во всех остальных случаях - сохраняем селектор
             $usedSelectors[] = $selectorObj;
         }
+
         if (empty($usedSelectors)) {
             return ['remove' => true, 'count' => count($selectorObjects), 'modified' => false];
         }
+
         if (count($usedSelectors) < count($selectorObjects)) {
             $block->setSelectors($usedSelectors);
             return ['remove' => false, 'count' => $removedCount, 'modified' => true];
         }
+
         return ['remove' => false, 'count' => 0, 'modified' => false];
+    }
+
+    private function cleanupMasterSelectors(array &$masterSelectors): void
+    {
+        foreach ($masterSelectors as $filePath => &$fileData) {
+            // Удаляем из JSON только те элементы, которые помечены как 'used'
+            // Оставляем только 'unused' для экономии места
+            $fileData['selectors'] = array_filter($fileData['selectors'], function($status) {
+                return $status === 'unused';
+            });
+            
+            $fileData['keyframes'] = array_filter($fileData['keyframes'], function($status) {
+                return $status === 'unused';
+            });
+            
+            $fileData['font_faces'] = array_filter($fileData['font_faces'], function($status) {
+                return $status === 'unused';
+            });
+            
+            $fileData['counter_styles'] = array_filter($fileData['counter_styles'], function($status) {
+                return $status === 'unused';
+            });
+        }
     }
 
     private function isSelectorSafeToRemove(string $selector): bool
