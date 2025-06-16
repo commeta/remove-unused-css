@@ -425,15 +425,14 @@ class RemoveUnusedCSSProcessor
                 foreach ($selectorObjects as $selectorObject) {
                     $selector = trim((string)$selectorObject);
                     if (!empty($selector)) {
-                        // Инициализируем все селекторы как 'used' - они станут 'unused' только если клиент явно это укажет
                         if (!isset($fileData['selectors'][$selector])) {
                             $fileData['selectors'][$selector] = 'used';
                         }
                     }
                 }
-            } elseif ($rule instanceof AtRuleBlockList || $rule instanceof AtRuleSet) {
+            } elseif ($rule instanceof AtRuleBlockList) {
                 $atRuleName = strtolower($rule->atRuleName());
-
+                
                 if ($atRuleName === 'keyframes' && $this->settings['keyframes']) {
                     $keyframeName = $this->extractAtRuleIdentifier($rule);
                     if ($keyframeName && !isset($fileData['keyframes'][$keyframeName])) {
@@ -453,9 +452,29 @@ class RemoveUnusedCSSProcessor
                     }
                 }
 
-                // Рекурсивная обработка вложенных правил
-                if (method_exists($rule, 'getContents')) {
-                    $this->collectSelectorsFromDocument($rule, $fileData);
+                // Рекурсивно обрабатываем содержимое блочных at-правил
+                $this->collectSelectorsFromDocument($rule, $fileData);
+                
+            } elseif ($rule instanceof AtRuleSet) {
+                $atRuleName = strtolower($rule->atRuleName());
+                
+                if ($atRuleName === 'keyframes' && $this->settings['keyframes']) {
+                    $keyframeName = $this->extractAtRuleIdentifier($rule);
+                    if ($keyframeName && !isset($fileData['keyframes'][$keyframeName])) {
+                        $fileData['keyframes'][$keyframeName] = 'used';
+                    }
+                }
+                elseif ($atRuleName === 'font-face' && $this->settings['font_face']) {
+                    $fontName = $this->extractFontFaceName($rule);
+                    if ($fontName && !isset($fileData['font_faces'][$fontName])) {
+                        $fileData['font_faces'][$fontName] = 'used';
+                    }
+                }
+                elseif ($atRuleName === 'counter-style' && $this->settings['counter_style']) {
+                    $counterName = $this->extractAtRuleIdentifier($rule);
+                    if ($counterName && !isset($fileData['counter_styles'][$counterName])) {
+                        $fileData['counter_styles'][$counterName] = 'used';
+                    }
                 }
             }
         }
@@ -756,7 +775,7 @@ class RemoveUnusedCSSProcessor
         $contents = $cssDocument->getContents();
         $toRemove = [];
         $removedCount = 0;
-
+        
         foreach ($contents as $rule) {
             if ($rule instanceof DeclarationBlock) {
                 $result = $this->processDeclarationBlock($rule, $fileData['selectors'] ?? []);
@@ -766,7 +785,7 @@ class RemoveUnusedCSSProcessor
                 } elseif ($result['modified']) {
                     $removedCount += $result['count'];
                 }
-            } elseif ($rule instanceof AtRuleBlockList || $rule instanceof AtRuleSet) {
+            } elseif ($rule instanceof AtRuleBlockList) {
                 $atRuleType = strtolower($rule->atRuleName());
                 
                 if (in_array($atRuleType, ['charset', 'import'])) {
@@ -775,17 +794,17 @@ class RemoveUnusedCSSProcessor
                     continue;
                 }
 
-                // Проверка специальных @-правил на удаление
                 if ($this->shouldRemoveAtRule($rule, $atRuleType, $fileData)) {
                     $toRemove[] = $rule;
                     $removedCount++;
                     continue;
                 }
-
+                
                 if ($this->shouldPreserveAtRule($atRuleType)) {
                     continue;
                 }
-
+                
+                // Рекурсивно обрабатываем содержимое блочных at-правил
                 if (in_array($atRuleType, ['supports', 'media', 'document', 'layer', 'container'])) {
                     $removedCount += $this->removeUnusedRules($rule, $fileData, $importCharset);
                     if (empty($rule->getContents())) {
@@ -794,13 +813,32 @@ class RemoveUnusedCSSProcessor
                 } elseif (!$this->isAtRuleAllowed($atRuleType)) {
                     $toRemove[] = $rule;
                 }
+                
+            } elseif ($rule instanceof AtRuleSet) {
+                $atRuleType = strtolower($rule->atRuleName());
+                
+                if (in_array($atRuleType, ['charset', 'import'])) {
+                    $importCharset .= $rule->render() . "\n";
+                    $toRemove[] = $rule;
+                    continue;
+                }
+
+                if ($this->shouldRemoveAtRule($rule, $atRuleType, $fileData)) {
+                    $toRemove[] = $rule;
+                    $removedCount++;
+                    continue;
+                }
+                
+                if (!$this->shouldPreserveAtRule($atRuleType) && !$this->isAtRuleAllowed($atRuleType)) {
+                    $toRemove[] = $rule;
+                }
             }
         }
-
+        
         foreach ($toRemove as $rule) {
             $cssDocument->remove($rule);
         }
-
+        
         return $removedCount;
     }
 
@@ -968,12 +1006,11 @@ class RemoveUnusedCSSProcessor
         foreach ($cssDocument->getContents() as $rule) {
             if ($rule instanceof DeclarationBlock) {
                 $this->fixPathsInDeclarationBlock($rule, $relativeDirFromRoot);
-            } elseif ($rule instanceof AtRuleBlockList || $rule instanceof AtRuleSet) {
+            } elseif ($rule instanceof AtRuleBlockList) {
                 $this->fixPathsInAtRule($rule, $relativeDirFromRoot);
-                // Рекурсивно обрабатываем содержимое at-правил
-                if (method_exists($rule, 'getContents')) {
-                    $this->processRulesForPaths($rule, $relativeDirFromRoot);
-                }
+                $this->processRulesForPaths($rule, $relativeDirFromRoot);
+            } elseif ($rule instanceof AtRuleSet) {
+                $this->fixPathsInAtRule($rule, $relativeDirFromRoot);
             }
         }
     }
@@ -1000,9 +1037,9 @@ class RemoveUnusedCSSProcessor
     private function fixPathsInAtRule($atRule, string $relativeDirFromRoot): void
     {
         $atRuleType = strtolower($atRule->atRuleName());
-        
-        // Обработка @import
-        if ($atRuleType === 'import') {
+
+        // Обработка правил @import и @namespace
+        if (in_array($atRuleType, ['import', 'namespace'])) {
             if (method_exists($atRule, 'getRule')) {
                 $rule = $atRule->getRule();
                 if ($rule) {
@@ -1013,21 +1050,8 @@ class RemoveUnusedCSSProcessor
                 }
             }
         }
-        
-        // Обработка @namespace
-        if ($atRuleType === 'namespace') {
-            if (method_exists($atRule, 'getRule')) {
-                $rule = $atRule->getRule();
-                if ($rule) {
-                    $newRule = $this->fixPathsInValue($rule, $relativeDirFromRoot);
-                    if ($newRule !== $rule && method_exists($atRule, 'setRule')) {
-                        $atRule->setRule($newRule);
-                    }
-                }
-            }
-        }
-        
-        // Обработка @font-face и других at-правил с содержимым
+
+        // Обработка содержимого блочных at-правил (только для AtRuleBlockList)
         if ($atRule instanceof AtRuleBlockList && method_exists($atRule, 'getContents')) {
             foreach ($atRule->getContents() as $rule) {
                 if ($rule instanceof DeclarationBlock) {
