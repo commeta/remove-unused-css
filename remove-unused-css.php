@@ -54,6 +54,11 @@ class RemoveUnusedCSSProcessor
     private const FIX_PATHS_INDIVIDUAL   = true;  // исправлять пути в отдельных очищенных файлах
     private const FIX_PATHS_COMBINED     = true;  // исправлять пути в объединённом файле
     
+    private const INCLUDE_IMPORT_FILE_COMBINED = true; // включать @import файлы в объединённый файл
+
+    private string $currentCharset = 'UTF-8'; // Текущая кодировка, используемая в CSS-файлах
+    private array $importedFiles = []; // Для предотвращения циклических импортов
+
     // Paths and state
     private string $documentRoot;
     private string $baseDir;
@@ -617,10 +622,13 @@ class RemoveUnusedCSSProcessor
         $cssDir = $this->baseDir . '/' . self::CSS_DIR;
         $this->ensureDirectoryExists($cssDir);
 
-        $combinedContent = '';
-        $importCharset = '';
-        $totalOriginalSize = 0;
-        $totalFinalSize = 0;
+        // Сброс списка импортированных файлов перед каждой генерацией
+        $this->importedFiles = [];
+
+        $combinedContent    = '';
+        $importCharset      = '';
+        $totalOriginalSize  = 0;
+        $totalFinalSize     = 0;
         $totalRemovedSelectors = 0;
         $generatedFileCount = 0;
 
@@ -632,10 +640,10 @@ class RemoveUnusedCSSProcessor
                     continue;
                 }
 
-                $originalSize = filesize($fullPath);
-                $totalOriginalSize += $originalSize;
+                $totalOriginalSize += filesize($fullPath);
 
-                $result = $this->processFile($fullPath, $fileData);
+                // Обрабатываем файл как «отдельный» (не для объединения)
+                $result = $this->processFile($fullPath, $fileData, true);
                 if (!isset($result['cssDocument'])) {
                     continue;
                 }
@@ -644,21 +652,19 @@ class RemoveUnusedCSSProcessor
                 $cleanCssPath = $cssDir . $relativePath;
                 $this->ensureDirectoryExists(dirname($cleanCssPath));
 
-                if (self::CSS_MINIFY) {
-                    $minifiedCss = $cssDocument->render(OutputFormat::createCompact());
-                } else {
-                    $minifiedCss = $cssDocument->render(OutputFormat::createPretty());
-                }
+                // Рендерим минифицированный или красивый CSS
+                $minifiedCss = self::CSS_MINIFY
+                    ? $cssDocument->render(OutputFormat::createCompact())
+                    : $cssDocument->render(OutputFormat::createPretty());
 
                 if (file_put_contents($cleanCssPath, $minifiedCss) !== false) {
-                    $this->processedFiles[] = $relativePath;
+                    $this->processedFiles[]      = $relativePath;
                     $generatedFileCount++;
-                    $finalSize = strlen($minifiedCss);
-                    $totalFinalSize += $finalSize;
-                    $totalRemovedSelectors += $result['removed_selectors'] ?? 0;
-
-                    $importCharset .= $result['import_charset'] ?? '';
-                    $combinedContent .= $minifiedCss . "\n\n";
+                    $totalFinalSize            += strlen($minifiedCss);
+                    $totalRemovedSelectors     += ($result['removed_selectors'] ?? 0);
+                    // Собираем charset, но НЕ удаляем import в отдельных файлах
+                    $importCharset             .= ($result['import_charset'] ?? '');
+                    $combinedContent           .= $minifiedCss . "\n\n";
                 } else {
                     $this->errors[] = "Не удалось сохранить файл: {$cleanCssPath}";
                 }
@@ -667,43 +673,61 @@ class RemoveUnusedCSSProcessor
             }
         }
 
-        // Обработка объединенного файла (остается без изменений)
+        // --- ПАТЧ: объединённый файл с развёртыванием локальных @import ---
         if (!empty($combinedContent)) {
             $combinedPath = $cssDir . self::COMBINED_FILE;
+
+            // Извлечь и установить текущий charset из накопленного import_charset
+            if (preg_match('/@charset\s+["\']([^"\']+)["\'];/i', $importCharset, $m)) {
+                $this->currentCharset = strtoupper($m[1]);
+            }
+
             $finalCombinedContent = $importCharset . $combinedContent;
+
+            // Сбросим список, чтобы избежать циклов
+            $this->importedFiles = [];
+
+            // Заменяем локальные @import содержимым файлов
+            $finalCombinedContent = $this->processImportsInCombined(
+                $finalCombinedContent,
+                $this->documentRoot
+            );
+
             try {
                 $parserCombined = new Parser($finalCombinedContent);
-                $docCombined = $parserCombined->parse();
+                $docCombined    = $parserCombined->parse();
+
                 if (defined('self::FIX_PATHS_COMBINED') && self::FIX_PATHS_COMBINED) {
                     $this->fixPathsInCssDocument($docCombined, $this->documentRoot);
                 }
-                if (self::CSS_COMBINED_MINIFY) {
-                    $finalCombinedContent = $docCombined->render(OutputFormat::createCompact());
-                } else {
-                    $finalCombinedContent = $docCombined->render(OutputFormat::createPretty());
-                }
+
+                $finalCombinedContent = self::CSS_COMBINED_MINIFY
+                    ? $docCombined->render(OutputFormat::createCompact())
+                    : $docCombined->render(OutputFormat::createPretty());
+
             } catch (Exception $e) {
                 $this->errors[] = "Не удалось обработать объединённый CSS: " . $e->getMessage();
             }
 
-            $combinedSize = strlen($finalCombinedContent);
             if (file_put_contents($combinedPath, $finalCombinedContent) !== false) {
                 $generatedFileCount++;
             } else {
                 $this->errors[] = "Не удалось создать объединённый файл: {$combinedPath}";
             }
-            $this->statistics['combined_size'] = $combinedSize;
+
+            $this->statistics['combined_size'] = strlen($finalCombinedContent);
         } else {
             $this->statistics['combined_size'] = 0;
         }
 
+        // Финальные метрики
         $this->statistics = array_merge($this->statistics, [
-            'processed_files' => count($this->processedFiles),
-            'generated_files' => $generatedFileCount,
-            'combined_file' => !empty($combinedContent),
-            'original_size' => $totalOriginalSize,
-            'final_size' => $totalFinalSize,
-            'bytes_saved' => $totalOriginalSize - $totalFinalSize,
+            'processed_files'   => count($this->processedFiles),
+            'generated_files'   => $generatedFileCount,
+            'combined_file'     => !empty($combinedContent),
+            'original_size'     => $totalOriginalSize,
+            'final_size'        => $totalFinalSize,
+            'bytes_saved'       => $totalOriginalSize - $totalFinalSize,
             'selectors_removed' => $totalRemovedSelectors,
         ]);
     }
@@ -717,7 +741,7 @@ class RemoveUnusedCSSProcessor
      * @return array|null Массив с ключами 'cssDocument', 'removed_selectors', 'import_charset' или null.
      * @throws RuntimeException В случае ошибок чтения, размера файла или парсинга.
      */
-    private function processFile(string $filePath, array $fileData): ?array
+    private function processFile(string $filePath, array $fileData, bool $isIndividualFile = true): ?array
     {
         $fileSize = filesize($filePath);
         if ($fileSize === false || $fileSize > self::MAX_FILE_SIZE) {
@@ -738,7 +762,7 @@ class RemoveUnusedCSSProcessor
             }
 
             $importCharset = '';
-            $removedSelectors = $this->removeUnusedRules($cssDocument, $fileData, $importCharset);
+            $removedSelectors = $this->removeUnusedRules($cssDocument, $fileData, $importCharset, $isIndividualFile);
 
             if (self::FIX_PATHS_INDIVIDUAL) {
                 $originalDir = dirname($filePath);
@@ -769,13 +793,52 @@ class RemoveUnusedCSSProcessor
         }
     }
 
+    private function processImportsInCombined(string $cssContent, string $basePath = ''): string
+    {
+        if (!self::INCLUDE_IMPORT_FILE_COMBINED) {
+            return $cssContent;
+        }
 
-    private function removeUnusedRules($cssDocument, array $fileData, string &$importCharset): int
+        return preg_replace_callback(
+            '/@import\s+(?:url\s*\(\s*)?["\']?([^"\')\s;]+)["\']?\s*\)?([^;]*);/i',
+            function($matches) use ($basePath) {
+                $url = trim($matches[1]);
+                $media = trim($matches[2]);
+                
+                // Проверяем, является ли URL локальным
+                if ($this->isLocalUrl($url)) {
+                    $fullPath = $this->resolveImportPath($url, $basePath);
+                    if ($fullPath && file_exists($fullPath) && !in_array($fullPath, $this->importedFiles)) {
+                        $this->importedFiles[] = $fullPath;
+                        
+                        $importedContent = file_get_contents($fullPath);
+                        if ($importedContent !== false) {
+                            // Рекурсивно обрабатываем импорты во вставляемом файле
+                            $importedContent = $this->processImportsInCombined($importedContent, dirname($fullPath));
+                            
+                            // Если есть медиа-условия, оборачиваем в @media
+                            if (!empty($media)) {
+                                $importedContent = "@media {$media} {\n{$importedContent}\n}";
+                            }
+                            
+                            return $importedContent;
+                        }
+                    }
+                }
+                
+                // Возвращаем оригинальный @import для внешних URL или ошибок
+                return $matches[0];
+            },
+            $cssContent
+        );
+    }
+   
+    private function removeUnusedRules($cssDocument, array $fileData, string &$importCharset, bool $isIndividualFile = true): int
     {
         $contents = $cssDocument->getContents();
         $toRemove = [];
         $removedCount = 0;
-        
+
         foreach ($contents as $rule) {
             if ($rule instanceof DeclarationBlock) {
                 $result = $this->processDeclarationBlock($rule, $fileData['selectors'] ?? []);
@@ -788,7 +851,14 @@ class RemoveUnusedCSSProcessor
             } elseif ($rule instanceof AtRuleBlockList) {
                 $atRuleType = strtolower($rule->atRuleName());
                 
-                if (in_array($atRuleType, ['charset', 'import'])) {
+                // Обработка @charset и @import для отдельных файлов
+                if ($isIndividualFile && in_array($atRuleType, ['charset', 'import'])) {
+                    // Для отдельных файлов оставляем @import на месте
+                    continue;
+                }
+                
+                // Обработка @charset и @import для объединенного файла
+                if (!$isIndividualFile && in_array($atRuleType, ['charset', 'import'])) {
                     $importCharset .= $rule->render() . "\n";
                     $toRemove[] = $rule;
                     continue;
@@ -799,25 +869,30 @@ class RemoveUnusedCSSProcessor
                     $removedCount++;
                     continue;
                 }
-                
+
                 if ($this->shouldPreserveAtRule($atRuleType)) {
                     continue;
                 }
-                
-                // Рекурсивно обрабатываем содержимое блочных at-правил
+
                 if (in_array($atRuleType, ['supports', 'media', 'document', 'layer', 'container'])) {
-                    $removedCount += $this->removeUnusedRules($rule, $fileData, $importCharset);
+                    $removedCount += $this->removeUnusedRules($rule, $fileData, $importCharset, $isIndividualFile);
                     if (empty($rule->getContents())) {
                         $toRemove[] = $rule;
                     }
                 } elseif (!$this->isAtRuleAllowed($atRuleType)) {
                     $toRemove[] = $rule;
                 }
-                
             } elseif ($rule instanceof AtRuleSet) {
                 $atRuleType = strtolower($rule->atRuleName());
                 
-                if (in_array($atRuleType, ['charset', 'import'])) {
+                // Обработка @charset и @import для отдельных файлов
+                if ($isIndividualFile && in_array($atRuleType, ['charset', 'import'])) {
+                    // Для отдельных файлов оставляем @import на месте
+                    continue;
+                }
+                
+                // Обработка @charset и @import для объединенного файла
+                if (!$isIndividualFile && in_array($atRuleType, ['charset', 'import'])) {
                     $importCharset .= $rule->render() . "\n";
                     $toRemove[] = $rule;
                     continue;
@@ -828,17 +903,17 @@ class RemoveUnusedCSSProcessor
                     $removedCount++;
                     continue;
                 }
-                
+
                 if (!$this->shouldPreserveAtRule($atRuleType) && !$this->isAtRuleAllowed($atRuleType)) {
                     $toRemove[] = $rule;
                 }
             }
         }
-        
+
         foreach ($toRemove as $rule) {
             $cssDocument->remove($rule);
         }
-        
+
         return $removedCount;
     }
 
@@ -1289,6 +1364,53 @@ class RemoveUnusedCSSProcessor
         }
         
         return '/' . implode('/', $normalized);
+    }
+
+    private function isLocalUrl(string $url): bool
+    {
+        return !preg_match('/^(https?:\/\/|\/\/|data:|blob:)/', $url);
+    }
+
+    private function resolveImportPath(string $url, string $basePath): ?string
+    {
+        // Убираем кавычки и лишние пробелы
+        $cleanUrl = trim($url, '"\'');
+        
+        // Если путь абсолютный от корня сайта
+        if ($cleanUrl[0] === '/') {
+            $fullPath = $this->documentRoot . $cleanUrl;
+        } else {
+            // Относительный путь
+            $fullPath = $basePath . '/' . $cleanUrl;
+        }
+        
+        $realPath = realpath($fullPath);
+        $documentRoot = realpath($this->documentRoot);
+        
+        // Проверяем безопасность пути
+        if ($realPath && $documentRoot && strpos($realPath, $documentRoot) === 0) {
+            return $realPath;
+        }
+        
+        return null;
+    }
+
+    private function extractCharsetFromContent(string $content): ?string
+    {
+        if (preg_match('/@charset\s+["\']([^"\']+)["\'];/i', $content, $matches)) {
+            return strtoupper($matches[1]);
+        }
+        return null;
+    }
+
+    private function convertEncoding(string $content, string $fromEncoding, string $toEncoding): string
+    {
+        if ($fromEncoding === $toEncoding) {
+            return $content;
+        }
+        
+        $converted = @iconv($fromEncoding, $toEncoding . '//IGNORE', $content);
+        return $converted !== false ? $converted : $content;
     }
 
     private function sendSuccess(string $message): void
