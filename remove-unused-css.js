@@ -24,21 +24,24 @@
         // HTML-ID блока настроек фильтрации (какие правила/селекторы сохранять)
         SETTINGS_ID: 'unused-css-settings',
 
-        CRAWLER_DB_NAME: 'SiteCrawlerDB',
-        CRAWLER_DB_VERSION: 1,
-        CRAWLER_STORE_NAME: 'crawled_urls',
-        CRAWLER_STATUS_KEY: 'crawler_status',
-        MAX_CRAWL_DEPTH: 5,
-        CRAWL_DELAY: 3000,
-        MAX_URLS_PER_SESSION: 1000,
+        CRAWLER_DB_NAME: 'SiteCrawlerDB', // Имя базы данных для хранения информации о сканировании
+        CRAWLER_DB_VERSION: 1, // Версия базы данных для IndexedDB
+        CRAWLER_STORE_NAME: 'crawled_urls', // Имя хранилища для сохранения информации о сканированных URL
+        CRAWLER_STATUS_KEY: 'crawler_status', // Ключ для хранения статуса сканирования в IndexedDB
+        MAX_CRAWL_DEPTH: 5, // Максимальная глубина сканирования ссылок на сайте
+        CRAWL_DELAY: 3000, // Задержка между запросами при сканировании сайта (в миллисекундах)
+        MAX_URLS_PER_SESSION: 1000, // Максимальное количество URL для обработки за одну сессию сканирования
 
-        TAB_HEARTBEAT_INTERVAL: 5000,
-        URL_LEASE_TIMEOUT: 30000,
-        MAX_RETRY_COUNT: 3,
-        BATCH_SIZE: 5,
-        SYNC_CHANNEL: 'sitecrawler_sync',
-        TAB_STORE_NAME: 'active_tabs',
-        LOCK_STORE_NAME: 'url_locks'
+        TAB_HEARTBEAT_INTERVAL: 5000, // Интервал (в миллисекундах) для heartbeat-сообщений между вкладками
+        URL_LEASE_TIMEOUT: 30000, // Таймаут (в миллисекундах) для блокировки URL (если вкладка не отвечает)
+        MAX_RETRY_COUNT: 3, // Максимальное количество попыток повторной обработки URL при ошибках
+        BATCH_SIZE: 5, // Размер батча для обработки URL (количество URL за один запрос)
+        SYNC_CHANNEL: 'sitecrawler_sync', // Канал для синхронизации между вкладками
+        TAB_STORE_NAME: 'active_tabs', // Имя хранилища для активных вкладок в IndexedDB
+        LOCK_STORE_NAME: 'url_locks', // Имя хранилища для блокировок URL в IndexedDB
+
+        PARSE_CSS_IMPORTS: true, // Включить парсинг @import директив
+        MAX_IMPORT_DEPTH: 10    // Максимальная глубина вложенности импортов        
     };
 
     // Состояние приложения: хранит данные для анализа и настройки очистки CSS
@@ -61,6 +64,9 @@
 
         // Set селекторов, найденных на текущей странице
         currentPageSelectors: new Set(),
+
+        importedFiles: new Map(), // Кэш загруженных импортов: URL -> content
+        importProcessingStack: new Set(), // Защита от циклических импортов
 
         // Настройки фильтрации/сохранения разных видов правил и селекторов
         settings: {
@@ -220,6 +226,117 @@
             });
             return cssFiles;
         }
+
+        static parseImportUrls(cssText) {
+            // Парсит CSS текст и извлекает все @import директивы
+            const imports = [];
+            const importRegex = /@import\s+(?:url\()?['"']?([^'"();\r\n]+)['"']?\)?(?:\s+([^;]+))?;/gi;
+            let match;
+            
+            while ((match = importRegex.exec(cssText)) !== null) {
+                const url = match[1].trim();
+                const media = match[2] ? match[2].trim() : null;
+                imports.push({ url, media });
+            }
+            
+            return imports;
+        }
+
+        static resolveImportUrl(importUrl, baseHref) {
+            // Резолвит относительный URL импорта относительно базового CSS файла
+            try {
+                if (!baseHref || baseHref === 'external') {
+                    return new URL(importUrl, window.location.origin).href;
+                }
+                
+                // Создаем базовый URL из href
+                const baseUrl = new URL(baseHref, window.location.origin);
+                // Резолвим импорт относительно базового URL
+                const resolvedUrl = new URL(importUrl, baseUrl);
+                
+                return resolvedUrl.href;
+            } catch (error) {
+                console.warn(`Ошибка резолвинга URL импорта: ${importUrl} относительно ${baseHref}`, error);
+                return null;
+            }
+        }
+
+        static async loadImportedCSS(importUrl, baseHref, depth = 0) {
+            // Рекурсивно загружает и обрабатывает импортированные CSS файлы
+            if (!CONFIG.PARSE_CSS_IMPORTS || depth >= CONFIG.MAX_IMPORT_DEPTH) {
+                return [];
+            }
+            
+            const resolvedUrl = this.resolveImportUrl(importUrl, baseHref);
+            if (!resolvedUrl) return [];
+            
+            // Защита от циклических импортов
+            if (state.importProcessingStack.has(resolvedUrl)) {
+                console.warn(`Обнаружен циклический импорт: ${resolvedUrl}`);
+                return [];
+            }
+            
+            // Проверяем кэш
+            if (state.importedFiles.has(resolvedUrl)) {
+                return state.importedFiles.get(resolvedUrl);
+            }
+            
+            try {
+                state.importProcessingStack.add(resolvedUrl);
+                
+                // Загружаем CSS файл
+                const cssContent = await this.loadStyleSheetContent(resolvedUrl);
+                if (!cssContent) {
+                    return [];
+                }
+                
+                const results = [];
+                
+                // Парсим основной контент
+                const rules = this.parseCSSText(cssContent);
+                if (rules) {
+                    results.push({
+                        url: resolvedUrl,
+                        content: cssContent,
+                        rules: rules,
+                        media: null
+                    });
+                }
+                
+                // Ищем вложенные импорты
+                const nestedImports = this.parseImportUrls(cssContent);
+                for (const nestedImport of nestedImports) {
+                    const nestedResults = await this.loadImportedCSS(
+                        nestedImport.url, 
+                        resolvedUrl, 
+                        depth + 1
+                    );
+                    
+                    // Добавляем media контекст к вложенным импортам
+                    nestedResults.forEach(result => {
+                        if (nestedImport.media && !result.media) {
+                            result.media = nestedImport.media;
+                        } else if (nestedImport.media && result.media) {
+                            result.media = `${nestedImport.media} and ${result.media}`;
+                        }
+                    });
+                    
+                    results.push(...nestedResults);
+                }
+                
+                // Кэшируем результат
+                state.importedFiles.set(resolvedUrl, results);
+                
+                return results;
+                
+            } catch (error) {
+                console.warn(`Ошибка загрузки импорта ${resolvedUrl}:`, error);
+                return [];
+            } finally {
+                state.importProcessingStack.delete(resolvedUrl);
+            }
+        }
+        
     }
 
     // Selector tracking and grouping
@@ -500,19 +617,43 @@
     class RuleProcessor {
         static async processStyleSheet(sheet) {
             let rules;
+            let cssContent = null;
+            
             try {
                 rules = sheet.cssRules;
             } catch (error) {
                 if (error.name === 'SecurityError') {
-                    rules = await this.handleCrossOriginStyleSheet(sheet);
+                    const result = await this.handleCrossOriginStyleSheet(sheet);
+                    rules = result?.rules || null;
+                    cssContent = result?.content || null;
                 } else {
                     console.warn(`Не удалось получить правила:`, error);
                     return;
                 }
             }
+            
             if (!rules) return;
+            
+            const baseHref = sheet.href || 'external';
+            
+            // Обрабатываем основные правила
             for (const rule of rules) {
-                await this.processRule(rule, sheet.href || 'external');
+                await this.processRule(rule, baseHref);
+            }
+            
+            // Обрабатываем импорты, если включена соответствующая опция
+            if (CONFIG.PARSE_CSS_IMPORTS && cssContent) {
+                await this.processImports(cssContent, baseHref);
+            } else if (CONFIG.PARSE_CSS_IMPORTS && !cssContent) {
+                // Если у нас есть доступ к cssRules, но нет текста, пытаемся загрузить
+                try {
+                    const loadedContent = await CSSUtils.loadStyleSheetContent(baseHref);
+                    if (loadedContent) {
+                        await this.processImports(loadedContent, baseHref);
+                    }
+                } catch (error) {
+                    console.warn(`Не удалось загрузить контент для обработки импортов: ${baseHref}`, error);
+                }
             }
         }
 
@@ -521,8 +662,15 @@
                 console.warn(`Файл недоступен: ${sheet.href}`);
                 return null;
             }
+            
             const cssText = await CSSUtils.loadStyleSheetContent(sheet.href);
-            return cssText ? CSSUtils.parseCSSText(cssText) : null;
+            if (!cssText) return null;
+            
+            const rules = CSSUtils.parseCSSText(cssText);
+            return {
+                rules: rules,
+                content: cssText
+            };
         }
 
         static async processRule(rule, href) {
@@ -597,6 +745,87 @@
                 }
             }
         }
+
+        static async processImports(cssContent, baseHref) {
+            // Обрабатывает все @import директивы в CSS контенте
+            const imports = CSSUtils.parseImportUrls(cssContent);
+            
+            for (const importInfo of imports) {
+                try {
+                    const importResults = await CSSUtils.loadImportedCSS(importInfo.url, baseHref);
+                    
+                    for (const result of importResults) {
+                        const importHref = result.url;
+                        const relativePath = CSSUtils.getRelativePathFromHref(importHref);
+                        
+                        // Добавляем файл в список текущих селекторов страницы
+                        state.currentPageSelectors.add(relativePath);
+                        
+                        // Обрабатываем правила из импортированного файла
+                        if (result.rules) {
+                            for (const rule of result.rules) {
+                                const mediaContext = result.media || importInfo.media;
+                                await this.processImportedRule(rule, importHref, mediaContext);
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.warn(`Ошибка обработки импорта ${importInfo.url}:`, error);
+                }
+            }
+        }
+
+        static async processImportedRule(rule, href, mediaContext = null) {
+            // Обрабатывает правило из импортированного CSS файла
+            switch (rule.type) {
+                case CSSRule.STYLE_RULE:
+                    SelectorManager.addSelector(rule.selectorText, href, mediaContext);
+                    break;
+                    
+                case CSSRule.MEDIA_RULE:
+                    // Комбинируем media контексты
+                    const combinedMedia = mediaContext 
+                        ? `${mediaContext} and ${rule.media.mediaText}`
+                        : rule.media.mediaText;
+                    
+                    for (const subRule of rule.cssRules) {
+                        if (subRule.type === CSSRule.STYLE_RULE) {
+                            SelectorManager.addSelector(subRule.selectorText, href, combinedMedia);
+                        } else if (subRule.type === CSSRule.MEDIA_RULE) {
+                            await this.processImportedRule(subRule, href, combinedMedia);
+                        }
+                    }
+                    break;
+                    
+                case CSSRule.KEYFRAMES_RULE:
+                    if (rule.name && state.settings.keyframes) {
+                        SelectorManager.addKeyframe(rule.name, href);
+                    }
+                    break;
+                    
+                case CSSRule.FONT_FACE_RULE:
+                    if (state.settings.font_face) {
+                        const fontFamily = this.extractFontFamily(rule);
+                        if (fontFamily) {
+                            SelectorManager.addFontFace(fontFamily, href);
+                        }
+                    }
+                    break;
+                    
+                case 11: // CSSRule.COUNTER_STYLE_RULE
+                    if (rule.name && state.settings.counter_style) {
+                        SelectorManager.addCounterStyle(rule.name, href);
+                    }
+                    break;
+                    
+                case CSSRule.SUPPORTS_RULE:
+                    for (const subRule of rule.cssRules) {
+                        await this.processImportedRule(subRule, href, mediaContext);
+                    }
+                    break;
+            }
+        }
+        
     }
 
     // Settings dialog and fetch/save
@@ -921,6 +1150,8 @@
                     state.styleSheetsInfo.clear();
                     state.totalUnusedCount = 0;
                     state.currentPageSelectors.clear();
+                    state.importedFiles.clear();
+                    state.importProcessingStack.clear();
 
                     if (typeof crawler === 'undefined') {
                         return;
@@ -1060,14 +1291,15 @@
                 if (selectors.length === 0) continue;
                 totalSelectors += selectors.length;
 
+                const fileType = state.importedFiles.has(file) ? '📥 (импорт)' : '📄';
                 reportHtml += '<div style="margin-bottom:10px;'
-                    + 'border:1px solid #444;border-radius:4px;'
-                    + 'padding:8px;word-break:break-word;'
-                    + 'background:#333;">'
-                    + '<strong style="display:block;color:#8ab4f8;'
-                    + 'margin-bottom:4px;">'
-                    + '📄 ' + file + ' (' + selectors.length + ' селекторов)'
-                    + '</strong>';
+                + 'border:1px solid #444;border-radius:4px;'
+                + 'padding:8px;word-break:break-word;'
+                + 'background:#333;">'
+                + '<strong style="display:block;color:#8ab4f8;'
+                + 'margin-bottom:4px;">'
+                + fileType + ' ' + file + ' (' + selectors.length + ' селекторов)'
+                + '</strong>';
 
                 let list = selectors.slice(0, 10).map(s => s.selector).join(', ');
                 if (selectors.length > 10) {
@@ -1229,6 +1461,10 @@
         static async init() {
             try {
                 state.settings = await SettingsManager.loadSettings();
+
+                state.importedFiles.clear();
+                state.importProcessingStack.clear();
+
                 state.currentPageSelectors = CSSUtils.getCurrentPageCSSFiles();
                 await this.loadStyleSheets();
                 UIManager.createFloatingButton();
@@ -2172,8 +2408,8 @@
                 // Нормализуем путь (убираем двойные слеши, лишние точки)
                 let pathname = urlObj.pathname;
                 pathname = pathname.replace(/\/+/g, '/'); // заменяем множественные слеши на одинарные
-                //pathname = pathname.replace(/\/\.$/, '/'); // убираем /. в конце
-                //pathname = pathname.replace(/\/\.\//g, '/'); // убираем /./ в середине
+                // pathname = pathname.replace(/\/\.$/, '/'); // убираем /. в конце
+                // pathname = pathname.replace(/\/\.\//g, '/'); // убираем /./ в середине
 
                 // Если путь заканчивается на index.html, index.php и т.п. - убираем
                 // pathname = pathname.replace(/\/(index\.(html?|php)|default\.(html?|php|asp|aspx))$/i, '/');
@@ -2405,37 +2641,37 @@
                 errors: []
             };
 
-            this.selectors = {
-                interactive: [
-                    'button', 'input', 'textarea', 'select', 'a[href]',
-                    '[onclick]', '[onmouseover]', '[onmouseenter]', '[onmouseleave]',
-                    '[onfocus]', '[onblur]', '[onchange]', '[onsubmit]',
-                    '[tabindex]:not([tabindex="-1"])', '[role="button"]',
-                    '[role="tab"]', '[role="menuitem"]', '[role="link"]',
-                    '.btn', '.button', '.link', '.clickable'
+            this.selectors = { // Селекторы для поиска интерактивных элементов
+                interactive: [ // Элементы, с которыми можно взаимодействовать
+                    'button', 'input', 'textarea', 'select', 'a[href]', // основные интерактивные элементы
+                    '[onclick]', '[onmouseover]', '[onmouseenter]', '[onmouseleave]', // события клика и наведения
+                    '[onfocus]', '[onblur]', '[onchange]', '[onsubmit]', // события фокуса и изменения
+                    '[tabindex]:not([tabindex="-1"])', '[role="button"]', // элементы с tabindex и ролью кнопки
+                    '[role="tab"]', '[role="menuitem"]', '[role="link"]', // дополнительные роли
+                    '.btn', '.button', '.link', '.clickable' // популярные классы для кнопок и ссылок
                 ],
 
-                stateful: [
+                stateful: [ // Элементы с изменяемым состоянием
                     '.active', '.selected', '.expanded', '.collapsed', '.open', '.closed',
                     '.visible', '.hidden', '.show', '.hide', '.current', '.disabled',
                     '.focus', '.hover', '.pressed', '.checked', '.loading'
                 ],
 
-                components: [
+                components: [ // Компоненты и виджеты
                     '.modal', '.popup', '.dropdown', '.tooltip', '.accordion', '.tab',
                     '.slider', '.carousel', '.gallery', '.menu', '.navbar', '.sidebar',
                     '.overlay', '.dialog', '.panel', '.card', '.widget', '.component',
                     '.swiper', '.slick', '.owl-carousel', '.splide'
                 ],
 
-                hoverable: [
+                hoverable: [ // Элементы, на которые можно навести курсор
                     'a[href]', 'button', '.btn', '.button', '.link', '.hover',
                     '[title]', '.menu-item', '.nav-item', '.card', '.thumbnail',
                     'img[src]', '.image', '.photo', '.gallery-item',
                     '.product', '.service', '.feature'
                 ],
 
-                forms: [
+                forms: [ // Элементы форм и ввода данных
                     'input[type="text"]', 'input[type="email"]', 'input[type="password"]',
                     'input[type="number"]', 'input[type="tel"]', 'input[type="url"]',
                     'input[type="search"]', 'input[type="checkbox"]', 'input[type="radio"]',
@@ -2443,7 +2679,7 @@
                     'textarea', 'select', 'form', '[contenteditable="true"]'
                 ],
 
-                media: [
+                media: [ // Медиа элементы
                     'video', 'audio', 'iframe', 'object', 'embed',
                     '.video-player', '.audio-player', '.media-container',
                     '.youtube-player', '.vimeo-player', '.video-wrapper'
@@ -3342,7 +3578,7 @@
 
             // Проверяем текстовое содержимое
             const text = (element.textContent || element.value || element.title || element.alt || '').toLowerCase().trim();
-            const destructiveWords = [
+            const destructiveWords = [ // расширенный список слов
                 'delete', 'remove', 'destroy', 'clear', 'reset',
                 'logout', 'log out', 'sign out', 'signout', 'exit',
                 'cancel', 'close', 'dismiss', 'reject', 'decline',
