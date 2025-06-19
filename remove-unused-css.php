@@ -39,7 +39,7 @@ use Sabberworm\CSS\Value\RuleValueList;
 class RemoveUnusedCSSProcessor
 {
     // File and directory constants
-    private const SELECTORS_FILE = 'data/unused_selectors.json'; // Путь к JSON-файлу, где хранятся все найденные неиспользуемые селекторы
+    private const SELECTORS_FILE = 'data/selectors.json'; // Путь к JSON-файлу, где хранятся все найденные неиспользуемые селекторы
     private const CSS_DIR = 'css/'; // Каталог, в который записываются очищенные (минимизированные) CSS-файлы
     private const COMBINED_FILE = 'remove-unused-css.min.css'; // Имя объединённого файла со всеми минимизированными стилями
     private const MAX_FILE_SIZE = 32 * 1024 * 1024; // Максимально допустимый размер обрабатываемого CSS-файла (32 МБ)
@@ -70,10 +70,8 @@ class RemoveUnusedCSSProcessor
         'media_print'         => true,  // сохранять @media print
         'keyframes'           => true,  // сохранять @keyframes анимации
         'font_face'           => true,  // сохранять @font-face шрифты
-        'import'              => true,  // сохранять @import директивы
         'supports'            => true,  // сохранять @supports правила
         'page'                => true,  // сохранять @page правила
-        'charset'             => true,  // сохранять @charset директиву
         'counter_style'       => true,  // сохранять @counter-style правила
         'layer'               => true,  // сохранять @layer правила
         'pseudo_classes'      => true,  // сохранять псевдо-классы (:hover, :focus)
@@ -96,6 +94,9 @@ class RemoveUnusedCSSProcessor
         'masks'               => true,  // сохранять маски и clip-path
         'nth_selectors'       => true,  // сохранять nth-child, nth-of-type
         'logical_selectors'   => true,  // сохранять логические селекторы (:not, :is, :where)
+        'used_css_list'       => '', // список используемых селекторов, которые нужно сохранить
+        'unused_css_list'     => '', // список неиспользуемых селекторов, которые нужно удалить
+        'generation_mode'     => 'remove_unused', // 'remove_unused' или 'keep_used'
         'version'             => 1      // текущая версия конфигурации
     ];
 
@@ -113,6 +114,10 @@ class RemoveUnusedCSSProcessor
         'style',   // встроенные стили
         'base'     // базовый URL
     ];
+
+    private array $whitelistPatterns = []; // Обработанные паттерны белого списка
+    private array $blacklistPatterns = []; // Обработанные паттерны черного списка
+
 
     public function __construct()
     {
@@ -157,14 +162,14 @@ class RemoveUnusedCSSProcessor
     private function updateCriticalPatterns(): void
     {
         $this->criticalPatterns = [];
+        
+        // Существующие критические паттерны
         if ($this->settings['media']) $this->criticalPatterns[] = '/^@media/i';
         if ($this->settings['media_print']) $this->criticalPatterns[] = '/^@media\s+print/i';
         if ($this->settings['keyframes']) $this->criticalPatterns[] = '/^@keyframes/i';
         if ($this->settings['font_face']) $this->criticalPatterns[] = '/^@font-face/i';
-        if ($this->settings['import']) $this->criticalPatterns[] = '/^@import/i';
         if ($this->settings['supports']) $this->criticalPatterns[] = '/^@supports/i';
         if ($this->settings['page']) $this->criticalPatterns[] = '/^@page/i';
-        if ($this->settings['charset']) $this->criticalPatterns[] = '/^@charset/i';
         if ($this->settings['counter_style']) $this->criticalPatterns[] = '/^@counter-style/i';
         if ($this->settings['layer']) $this->criticalPatterns[] = '/^@layer/i';
         if ($this->settings['pseudo_classes']) $this->criticalPatterns[] = '/:[a-z-]+(?:\([^)]*\))?/i';
@@ -187,6 +192,74 @@ class RemoveUnusedCSSProcessor
         if ($this->settings['masks']) $this->criticalPatterns[] = '/mask|clip-path/i';
         if ($this->settings['nth_selectors']) $this->criticalPatterns[] = '/nth-child|nth-of-type/i';
         if ($this->settings['logical_selectors']) $this->criticalPatterns[] = '/not\(|is\(|where\(|has\(/i';
+        
+        // Обновление списков черного и белого списков
+        $this->updateBlackWhiteLists();
+    }
+
+    /**
+     * Обновляет паттерны черного и белого списков из настроек
+     */
+    private function updateBlackWhiteLists(): void
+    {
+        // Обработка белого списка
+        $this->whitelistPatterns = [];
+        if (!empty($this->settings['used_css_list'])) {
+            $whitelistItems = array_map('trim', explode(',', $this->settings['used_css_list']));
+            foreach ($whitelistItems as $item) {
+                if (!empty($item)) {
+                    $this->whitelistPatterns[] = $this->convertWildcardToRegex($item);
+                }
+            }
+        }
+        
+        // Обработка черного списка
+        $this->blacklistPatterns = [];
+        if (!empty($this->settings['unused_css_list'])) {
+            $blacklistItems = array_map('trim', explode(',', $this->settings['unused_css_list']));
+            foreach ($blacklistItems as $item) {
+                if (!empty($item)) {
+                    $this->blacklistPatterns[] = $this->convertWildcardToRegex($item);
+                }
+            }
+        }
+    }
+
+    /**
+     * Преобразует wildcard паттерн в регулярное выражение
+     * Поддерживает * как замену любого количества символов
+     */
+    private function convertWildcardToRegex(string $pattern): string
+    {
+        // Экранируем специальные символы regex, кроме *
+        $escaped = preg_quote($pattern, '/');
+        // Заменяем экранированные * на regex паттерн
+        $regex = str_replace('\*', '.*', $escaped);
+        // Возвращаем полный regex паттерн
+        return '/^' . $regex . '$/i';
+    }
+
+    /**
+     * Проверяет попадание селектора в черный или белый список
+     * Возвращает: 'blacklist', 'whitelist' или null
+     */
+    private function checkBlackWhiteList(string $selector): ?string
+    {
+        // Проверка черного списка (приоритет выше)
+        foreach ($this->blacklistPatterns as $pattern) {
+            if (preg_match($pattern, $selector)) {
+                return 'blacklist';
+            }
+        }
+        
+        // Проверка белого списка
+        foreach ($this->whitelistPatterns as $pattern) {
+            if (preg_match($pattern, $selector)) {
+                return 'whitelist';
+            }
+        }
+        
+        return null;
     }
 
     public function processRequest(): void
@@ -224,22 +297,35 @@ class RemoveUnusedCSSProcessor
         if (isset($requestData['action']) && $requestData['action'] === 'save' && isset($requestData['settings'])) {
             $previousSettings = $this->settings;
             $this->saveSettings($requestData['settings']);
+            
             $needReload = false;
-            foreach ([
-                'media', 'media_print', 'keyframes', 'font_face', 'import', 'supports', 'page', 'charset',
+            
+            // Проверяем изменения в критических настройках
+            $criticalSettings = [
+                'media', 'media_print', 'keyframes', 'font_face', 'supports', 'page', 
                 'counter_style', 'layer', 'pseudo_classes', 'pseudo_elements', 'attribute_selectors',
                 'css_variables', 'vendor_prefixes', 'adjacent_selectors', 'child_selectors', 'general_siblings',
                 'css_functions', 'animations', 'transforms', 'transitions', 'percentages', 'escapes', 'colors',
                 'gradients', 'filters', 'masks', 'nth_selectors', 'logical_selectors'
-            ] as $key) {
+            ];
+            
+            foreach ($criticalSettings as $key) {
                 if (($previousSettings[$key] ?? true) !== ($requestData['settings'][$key] ?? true)) {
                     $needReload = true;
                     break;
                 }
             }
+            
+            // Проверяем изменения в черном и белом списках
+            if (($previousSettings['used_css_list'] ?? '') !== ($requestData['settings']['used_css_list'] ?? '') ||
+                ($previousSettings['unused_css_list'] ?? '') !== ($requestData['settings']['unused_css_list'] ?? '')) {
+                $needReload = true;
+            }
+            
             if ($needReload) {
                 $this->clearOldData();
             }
+            
             $this->sendSuccessWithData('Настройки сохранены', ['need_reload' => $needReload]);
         } elseif (isset($requestData['action']) && $requestData['action'] === 'load') {
             $this->sendSuccessWithData('Настройки загружены', ['settings' => $this->settings]);
@@ -324,8 +410,7 @@ class RemoveUnusedCSSProcessor
             if ($normalizedPath === null) {
                 continue;
             }
-
-            // Инициализация структуры файла если её нет
+            
             if (!isset($masterSelectors[$normalizedPath])) {
                 $masterSelectors[$normalizedPath] = [
                     'selectors' => [],
@@ -333,77 +418,125 @@ class RemoveUnusedCSSProcessor
                     'font_faces' => [],
                     'counter_styles' => []
                 ];
-                
-                // Инициализация всех селекторов из CSS файла
                 $fullPath = $this->getFullFilePath($normalizedPath);
                 if ($fullPath && file_exists($fullPath)) {
                     $this->initializeFileSelectors($fullPath, $masterSelectors[$normalizedPath]);
                 }
             }
-
-            // Обработка данных от клиента
+            
             foreach ($items as $item) {
                 if (isset($item['selector'])) {
                     $selector = $item['selector'];
                     $used = $item['used'] ?? true;
-                    
                     if ($selector) {
-                        // Если селектор используется - помечаем как used или удаляем из списка неиспользуемых
-                        if ($used) {
-                            // Если был помечен как неиспользуемый, убираем эту пометку
-                            if (isset($masterSelectors[$normalizedPath]['selectors'][$selector])) {
-                                $masterSelectors[$normalizedPath]['selectors'][$selector] = 'used';
-                            }
-                        } else {
-                            // Селектор не используется - добавляем/обновляем в списке
-                            $masterSelectors[$normalizedPath]['selectors'][$selector] = 'unused';
-                        }
+                        $finalStatus = $this->determineFinalStatusWithAccumulation(
+                            $selector, 
+                            $used, 
+                            'selector',
+                            $masterSelectors[$normalizedPath]['selectors'][$selector] ?? 'unknown'
+                        );
+                        $masterSelectors[$normalizedPath]['selectors'][$selector] = $finalStatus;
                     }
                 }
                 elseif (isset($item['keyframes'])) {
                     $keyframeName = $item['keyframes'];
                     $used = $item['used'] ?? true;
-                    
                     if ($keyframeName) {
-                        if ($used) {
-                            if (isset($masterSelectors[$normalizedPath]['keyframes'][$keyframeName])) {
-                                $masterSelectors[$normalizedPath]['keyframes'][$keyframeName] = 'used';
-                            }
-                        } else {
-                            $masterSelectors[$normalizedPath]['keyframes'][$keyframeName] = 'unused';
-                        }
+                        $finalStatus = $this->determineFinalStatusWithAccumulation(
+                            $keyframeName, 
+                            $used, 
+                            'keyframes',
+                            $masterSelectors[$normalizedPath]['keyframes'][$keyframeName] ?? 'unknown'
+                        );
+                        $masterSelectors[$normalizedPath]['keyframes'][$keyframeName] = $finalStatus;
                     }
                 }
                 elseif (isset($item['font-face'])) {
                     $fontName = $item['font-face'];
                     $used = $item['used'] ?? true;
-                    
                     if ($fontName) {
-                        if ($used) {
-                            if (isset($masterSelectors[$normalizedPath]['font_faces'][$fontName])) {
-                                $masterSelectors[$normalizedPath]['font_faces'][$fontName] = 'used';
-                            }
-                        } else {
-                            $masterSelectors[$normalizedPath]['font_faces'][$fontName] = 'unused';
-                        }
+                        $finalStatus = $this->determineFinalStatusWithAccumulation(
+                            $fontName, 
+                            $used, 
+                            'font-face',
+                            $masterSelectors[$normalizedPath]['font_faces'][$fontName] ?? 'unknown'
+                        );
+                        $masterSelectors[$normalizedPath]['font_faces'][$fontName] = $finalStatus;
                     }
                 }
                 elseif (isset($item['counter-style'])) {
                     $counterName = $item['counter-style'];
                     $used = $item['used'] ?? true;
-                    
                     if ($counterName) {
-                        if ($used) {
-                            if (isset($masterSelectors[$normalizedPath]['counter_styles'][$counterName])) {
-                                $masterSelectors[$normalizedPath]['counter_styles'][$counterName] = 'used';
-                            }
-                        } else {
-                            $masterSelectors[$normalizedPath]['counter_styles'][$counterName] = 'unused';
-                        }
+                        $finalStatus = $this->determineFinalStatusWithAccumulation(
+                            $counterName, 
+                            $used, 
+                            'counter-style',
+                            $masterSelectors[$normalizedPath]['counter_styles'][$counterName] ?? 'unknown'
+                        );
+                        $masterSelectors[$normalizedPath]['counter_styles'][$counterName] = $finalStatus;
                     }
                 }
             }
         }
+    }
+
+    /**
+     * Определяет финальный статус элемента на основе приоритетов:
+     * 1. Черный список -> unused
+     * 2. Белый список -> used
+     * 3. Критические фильтры -> used (если критический)
+     * 4. Реальный статус использования
+     */
+    private function determineFinalStatus(string $element, bool $realUsed, string $type): string
+    {
+        // Приоритет 1: Черный список
+        $listStatus = $this->checkBlackWhiteList($element);
+        if ($listStatus === 'blacklist') {
+            return 'unused';
+        }
+        
+        // Приоритет 2: Белый список
+        if ($listStatus === 'whitelist') {
+            return 'used';
+        }
+        
+        // Приоритет 3: Критические фильтры (только для селекторов)
+        if ($type === 'selector' && !$this->isSelectorSafeToRemove($element)) {
+            return 'used';
+        }
+        
+        // Приоритет 4: Реальный статус использования
+        return $realUsed ? 'used' : 'unused';
+    }
+
+    /**
+     * Определяет финальный статус с учетом режима накопителя
+     * Если селектор когда-либо был использован, статус остается 'used'
+     */
+    private function determineFinalStatusWithAccumulation(string $element, bool $realUsed, string $type, string $currentStatus): string
+    {
+        // Если уже помечен как используемый, остается используемым (режим накопителя)
+        if ($currentStatus === 'used') {
+            return 'used';
+        }
+        
+        // Приоритет проверки: Черный список > Белый список > Критические настройки > Реальная проверка
+        $listStatus = $this->checkBlackWhiteList($element);
+        if ($listStatus === 'blacklist') {
+            return 'unused';
+        }
+        if ($listStatus === 'whitelist') {
+            return 'used';
+        }
+        
+        // Проверка критических настроек (селекторы, которые нельзя удалять)
+        if ($type === 'selector' && !$this->isSelectorSafeToRemove($element)) {
+            return 'used';
+        }
+        
+        // Реальная проверка использования
+        return $realUsed ? 'used' : ($currentStatus === 'unknown' ? 'unused' : $currentStatus);
     }
 
     private function initializeFileSelectors(string $filePath, array &$fileData): void
@@ -413,7 +546,6 @@ class RemoveUnusedCSSProcessor
             if ($cssContent === false) {
                 throw new RuntimeException("Не удалось прочитать файл: {$filePath}");
             }
-
             $parser = new Parser($cssContent);
             $cssDocument = $parser->parse();
             $this->collectSelectorsFromDocument($cssDocument, $fileData);
@@ -431,54 +563,50 @@ class RemoveUnusedCSSProcessor
                     $selector = trim((string)$selectorObject);
                     if (!empty($selector)) {
                         if (!isset($fileData['selectors'][$selector])) {
-                            $fileData['selectors'][$selector] = 'used';
+                            // ИСПРАВЛЕНИЕ: Устанавливаем статус 'unknown' вместо 'used'
+                            $fileData['selectors'][$selector] = 'unknown';
                         }
                     }
                 }
             } elseif ($rule instanceof AtRuleBlockList) {
                 $atRuleName = strtolower($rule->atRuleName());
-                
                 if ($atRuleName === 'keyframes' && $this->settings['keyframes']) {
                     $keyframeName = $this->extractAtRuleIdentifier($rule);
                     if ($keyframeName && !isset($fileData['keyframes'][$keyframeName])) {
-                        $fileData['keyframes'][$keyframeName] = 'used';
+                        $fileData['keyframes'][$keyframeName] = 'unknown';
                     }
                 }
                 elseif ($atRuleName === 'font-face' && $this->settings['font_face']) {
                     $fontName = $this->extractFontFaceName($rule);
                     if ($fontName && !isset($fileData['font_faces'][$fontName])) {
-                        $fileData['font_faces'][$fontName] = 'used';
+                        $fileData['font_faces'][$fontName] = 'unknown';
                     }
                 }
                 elseif ($atRuleName === 'counter-style' && $this->settings['counter_style']) {
                     $counterName = $this->extractAtRuleIdentifier($rule);
                     if ($counterName && !isset($fileData['counter_styles'][$counterName])) {
-                        $fileData['counter_styles'][$counterName] = 'used';
+                        $fileData['counter_styles'][$counterName] = 'unknown';
                     }
                 }
-
-                // Рекурсивно обрабатываем содержимое блочных at-правил
                 $this->collectSelectorsFromDocument($rule, $fileData);
-                
             } elseif ($rule instanceof AtRuleSet) {
                 $atRuleName = strtolower($rule->atRuleName());
-                
                 if ($atRuleName === 'keyframes' && $this->settings['keyframes']) {
                     $keyframeName = $this->extractAtRuleIdentifier($rule);
                     if ($keyframeName && !isset($fileData['keyframes'][$keyframeName])) {
-                        $fileData['keyframes'][$keyframeName] = 'used';
+                        $fileData['keyframes'][$keyframeName] = 'unknown';
                     }
                 }
                 elseif ($atRuleName === 'font-face' && $this->settings['font_face']) {
                     $fontName = $this->extractFontFaceName($rule);
                     if ($fontName && !isset($fileData['font_faces'][$fontName])) {
-                        $fileData['font_faces'][$fontName] = 'used';
+                        $fileData['font_faces'][$fontName] = 'unknown';
                     }
                 }
                 elseif ($atRuleName === 'counter-style' && $this->settings['counter_style']) {
                     $counterName = $this->extractAtRuleIdentifier($rule);
                     if ($counterName && !isset($fileData['counter_styles'][$counterName])) {
-                        $fileData['counter_styles'][$counterName] = 'used';
+                        $fileData['counter_styles'][$counterName] = 'unknown';
                     }
                 }
             }
@@ -919,31 +1047,50 @@ class RemoveUnusedCSSProcessor
 
     private function shouldRemoveAtRule($rule, string $atRuleType, array $fileData): bool
     {
-        // Проверка @keyframes
+        $generationMode = $this->settings['generation_mode'] ?? 'remove_unused';
+        
         if ($atRuleType === 'keyframes' && isset($fileData['keyframes'])) {
             $keyframeName = $this->extractAtRuleIdentifier($rule);
             if ($keyframeName && isset($fileData['keyframes'][$keyframeName])) {
-                return $fileData['keyframes'][$keyframeName] === 'unused';
+                $status = $fileData['keyframes'][$keyframeName];
+                return $this->shouldRemoveByStatus($status, $generationMode);
             }
         }
         
-        // Проверка @font-face
         if ($atRuleType === 'font-face' && isset($fileData['font_faces'])) {
             $fontName = $this->extractFontFaceName($rule);
             if ($fontName && isset($fileData['font_faces'][$fontName])) {
-                return $fileData['font_faces'][$fontName] === 'unused';
+                $status = $fileData['font_faces'][$fontName];
+                return $this->shouldRemoveByStatus($status, $generationMode);
             }
         }
         
-        // Проверка @counter-style
         if ($atRuleType === 'counter-style' && isset($fileData['counter_styles'])) {
             $counterName = $this->extractAtRuleIdentifier($rule);
             if ($counterName && isset($fileData['counter_styles'][$counterName])) {
-                return $fileData['counter_styles'][$counterName] === 'unused';
+                $status = $fileData['counter_styles'][$counterName];
+                return $this->shouldRemoveByStatus($status, $generationMode);
             }
         }
         
         return false;
+    }
+
+    /**
+     * Определяет, следует ли удалить элемент в зависимости от его статуса и режима генерации
+     */
+    private function shouldRemoveByStatus(string $status, string $generationMode): bool
+    {
+        switch ($generationMode) {
+            case 'keep_used':
+                // В режиме "сохранить используемые" удаляем все, кроме явно используемых
+                return $status !== 'used';
+                
+            case 'remove_unused':
+            default:
+                // В режиме "удалить неиспользуемые" удаляем только явно неиспользуемые
+                return $status === 'unused';
+        }
     }
 
     private function shouldPreserveAtRule(string $atRuleType): bool
@@ -972,71 +1119,121 @@ class RemoveUnusedCSSProcessor
         $selectorObjects = $block->getSelectors();
         $usedSelectors = [];
         $removedCount = 0;
-
+        $generationMode = $this->settings['generation_mode'] ?? 'remove_unused';
+        
         foreach ($selectorObjects as $selectorObj) {
             $selector = trim((string)$selectorObj);
+            $status = isset($selectors[$selector]) ? $selectors[$selector] : 'unknown';
             
-            // Удаляем селектор только если:
-            // 1. Он безопасен для удаления (не критический)
-            // 2. И он явно помечен как 'unused' в мастер-списке
-            if ($this->isSelectorSafeToRemove($selector) && 
-                isset($selectors[$selector]) && 
-                $selectors[$selector] === 'unused') {
+            $shouldKeep = $this->shouldKeepSelector($selector, $status, $generationMode);
+            
+            if ($shouldKeep) {
+                $usedSelectors[] = $selectorObj;
+            } else {
                 $removedCount++;
-                continue; // Пропускаем этот селектор (удаляем его)
             }
-            
-            // Во всех остальных случаях - сохраняем селектор
-            $usedSelectors[] = $selectorObj;
         }
-
+        
         if (empty($usedSelectors)) {
             return ['remove' => true, 'count' => count($selectorObjects), 'modified' => false];
         }
-
+        
         if (count($usedSelectors) < count($selectorObjects)) {
             $block->setSelectors($usedSelectors);
             return ['remove' => false, 'count' => $removedCount, 'modified' => true];
         }
-
+        
         return ['remove' => false, 'count' => 0, 'modified' => false];
+    }
+
+    /**
+     * Определяет, следует ли сохранить селектор в зависимости от режима генерации
+     */
+    private function shouldKeepSelector(string $selector, string $status, string $generationMode): bool
+    {
+        // Приоритет проверки: Черный список > Белый список > Критические настройки > Режим генерации
+        
+        $listStatus = $this->checkBlackWhiteList($selector);
+        if ($listStatus === 'blacklist') {
+            return false; // Принудительно удаляем
+        }
+        if ($listStatus === 'whitelist') {
+            return true;  // Принудительно сохраняем
+        }
+        
+        // Критические селекторы всегда сохраняются
+        if (!$this->isSelectorSafeToRemove($selector)) {
+            return true;
+        }
+        
+        // Логика в зависимости от режима генерации
+        switch ($generationMode) {
+            case 'keep_used':
+                // Сохраняем только явно используемые
+                return $status === 'used';
+                
+            case 'remove_unused':
+            default:
+                // Удаляем только явно неиспользуемые
+                return $status !== 'unused';
+        }
     }
 
     private function cleanupMasterSelectors(array &$masterSelectors): void
     {
+        $generationMode = $this->settings['generation_mode'] ?? 'remove_unused';
+        
         foreach ($masterSelectors as $filePath => &$fileData) {
-            // Удаляем из JSON только те элементы, которые помечены как 'used'
-            // Оставляем только 'unused' для экономии места
-            $fileData['selectors'] = array_filter($fileData['selectors'], function($status) {
-                return $status === 'unused';
-            });
-            
-            $fileData['keyframes'] = array_filter($fileData['keyframes'], function($status) {
-                return $status === 'unused';
-            });
-            
-            $fileData['font_faces'] = array_filter($fileData['font_faces'], function($status) {
-                return $status === 'unused';
-            });
-            
-            $fileData['counter_styles'] = array_filter($fileData['counter_styles'], function($status) {
-                return $status === 'unused';
-            });
+            if ($generationMode === 'keep_used') {
+                // В режиме keep_used сохраняем только используемые для отображения
+                $fileData['selectors'] = array_filter($fileData['selectors'], function($status) {
+                    return $status === 'used';
+                });
+                $fileData['keyframes'] = array_filter($fileData['keyframes'], function($status) {
+                    return $status === 'used';
+                });
+                $fileData['font_faces'] = array_filter($fileData['font_faces'], function($status) {
+                    return $status === 'used';
+                });
+                $fileData['counter_styles'] = array_filter($fileData['counter_styles'], function($status) {
+                    return $status === 'used';
+                });
+            } else {
+                // В режиме remove_unused сохраняем только неиспользуемые для отображения
+                $fileData['selectors'] = array_filter($fileData['selectors'], function($status) {
+                    return $status === 'unused';
+                });
+                $fileData['keyframes'] = array_filter($fileData['keyframes'], function($status) {
+                    return $status === 'unused';
+                });
+                $fileData['font_faces'] = array_filter($fileData['font_faces'], function($status) {
+                    return $status === 'unused';
+                });
+                $fileData['counter_styles'] = array_filter($fileData['counter_styles'], function($status) {
+                    return $status === 'unused';
+                });
+            }
         }
     }
 
     private function isSelectorSafeToRemove(string $selector): bool
     {
         if (empty($selector)) return false;
+        
         $trimmed = trim($selector);
+        
+        // Проверка критических селекторов
         if (in_array(strtolower($trimmed), $this->criticalSelectors, true)) {
             return false;
         }
+        
+        // Проверка критических паттернов
         foreach ($this->criticalPatterns as $pattern) {
             if (preg_match($pattern, $trimmed)) {
                 return false;
             }
         }
+        
         return true;
     }
 
