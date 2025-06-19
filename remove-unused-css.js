@@ -74,10 +74,8 @@
             media_print: true,         // флаг сохранения @media print
             keyframes: true,           // флаг сохранения анимаций @keyframes
             font_face: true,           // флаг сохранения @font-face
-            import: true,              // флаг сохранения @import
             supports: true,            // флаг сохранения @supports
             page: true,                // флаг сохранения @page
-            charset: true,             // флаг сохранения @charset
             counter_style: true,       // флаг сохранения @counter-style
             layer: true,               // флаг сохранения @layer
             pseudo_classes: true,      // флаг сохранения псевдоклассов (:hover, :nth-child и т.д.)
@@ -99,7 +97,11 @@
             filters: true,             // флаг сохранения фильтров (filter, backdrop-filter)
             masks: true,               // флаг сохранения масок (mask, clip-path)
             nth_selectors: true,       // флаг сохранения :nth-child, :nth-of-type
-            logical_selectors: true    // флаг сохранения логических селекторов (:not(), :is(), :has())
+            logical_selectors: true,   // флаг сохранения логических селекторов (:not(), :is(), :has())
+
+            used_css_list: '', // Белый список селекторов
+            unused_css_list: '', // Черный список селекторов
+            generation_mode: 'remove_unused' // 'remove_unused' или 'keep_used'            
         }
     };
 
@@ -232,13 +234,13 @@
             const imports = [];
             const importRegex = /@import\s+(?:url\()?['"']?([^'"();\r\n]+)['"']?\)?(?:\s+([^;]+))?;/gi;
             let match;
-            
+
             while ((match = importRegex.exec(cssText)) !== null) {
                 const url = match[1].trim();
                 const media = match[2] ? match[2].trim() : null;
                 imports.push({ url, media });
             }
-            
+
             return imports;
         }
 
@@ -248,12 +250,12 @@
                 if (!baseHref || baseHref === 'external') {
                     return new URL(importUrl, window.location.origin).href;
                 }
-                
+
                 // Создаем базовый URL из href
                 const baseUrl = new URL(baseHref, window.location.origin);
                 // Резолвим импорт относительно базового URL
                 const resolvedUrl = new URL(importUrl, baseUrl);
-                
+
                 return resolvedUrl.href;
             } catch (error) {
                 console.warn(`Ошибка резолвинга URL импорта: ${importUrl} относительно ${baseHref}`, error);
@@ -266,32 +268,32 @@
             if (!CONFIG.PARSE_CSS_IMPORTS || depth >= CONFIG.MAX_IMPORT_DEPTH) {
                 return [];
             }
-            
+
             const resolvedUrl = this.resolveImportUrl(importUrl, baseHref);
             if (!resolvedUrl) return [];
-            
+
             // Защита от циклических импортов
             if (state.importProcessingStack.has(resolvedUrl)) {
                 console.warn(`Обнаружен циклический импорт: ${resolvedUrl}`);
                 return [];
             }
-            
+
             // Проверяем кэш
             if (state.importedFiles.has(resolvedUrl)) {
                 return state.importedFiles.get(resolvedUrl);
             }
-            
+
             try {
                 state.importProcessingStack.add(resolvedUrl);
-                
+
                 // Загружаем CSS файл
                 const cssContent = await this.loadStyleSheetContent(resolvedUrl);
                 if (!cssContent) {
                     return [];
                 }
-                
+
                 const results = [];
-                
+
                 // Парсим основной контент
                 const rules = this.parseCSSText(cssContent);
                 if (rules) {
@@ -302,16 +304,16 @@
                         media: null
                     });
                 }
-                
+
                 // Ищем вложенные импорты
                 const nestedImports = this.parseImportUrls(cssContent);
                 for (const nestedImport of nestedImports) {
                     const nestedResults = await this.loadImportedCSS(
-                        nestedImport.url, 
-                        resolvedUrl, 
+                        nestedImport.url,
+                        resolvedUrl,
                         depth + 1
                     );
-                    
+
                     // Добавляем media контекст к вложенным импортам
                     nestedResults.forEach(result => {
                         if (nestedImport.media && !result.media) {
@@ -320,15 +322,15 @@
                             result.media = `${nestedImport.media} and ${result.media}`;
                         }
                     });
-                    
+
                     results.push(...nestedResults);
                 }
-                
+
                 // Кэшируем результат
                 state.importedFiles.set(resolvedUrl, results);
-                
+
                 return results;
-                
+
             } catch (error) {
                 console.warn(`Ошибка загрузки импорта ${resolvedUrl}:`, error);
                 return [];
@@ -336,7 +338,7 @@
                 state.importProcessingStack.delete(resolvedUrl);
             }
         }
-        
+
     }
 
     // Selector tracking and grouping
@@ -367,59 +369,93 @@
 
         static checkSelectorsUsage() {
             let unusedCount = 0;
-            
-            // Проверка обычных селекторов
+
             for (const [selector, info] of state.unusedSelectors.entries()) {
                 if (!info.used) {
+                    let reallyUsed = false;
+
                     try {
                         const exists = document.querySelector(selector);
-                        if (exists) {
-                            info.used = true;
-                        } else if (info.safe) {
-                            unusedCount++;
-                        }
+                        reallyUsed = !!exists;
                     } catch (error) {
+                        reallyUsed = true; // Если ошибка селектора, считаем используемым
+                    }
+
+                    // Применяем логику белого и черного списков
+                    if (this.isInBlackList(selector)) {
+                        // Селектор в черном списке - принудительно неиспользуемый
+                        info.used = false;
+                    } else if (this.isInWhiteList(selector)) {
+                        // Селектор в белом списке - принудительно используемый
                         info.used = true;
+                    } else {
+                        // Обычная логика проверки
+                        info.used = reallyUsed;
+                    }
+
+                    if (!info.used && info.safe) {
+                        unusedCount++;
                     }
                 }
             }
-            
-            // Проверка keyframes
+
             for (const [name, info] of state.unusedKeyframes.entries()) {
                 if (!info.used) {
-                    const isUsed = SelectorManager.checkKeyframeUsage(name);
-                    if (isUsed) {
+                    let reallyUsed = false;
+
+                    if (this.isInBlackList(name)) {
+                        info.used = false;
+                    } else if (this.isInWhiteList(name)) {
                         info.used = true;
                     } else {
+                        reallyUsed = this.checkKeyframeUsage(name);
+                        info.used = reallyUsed;
+                    }
+
+                    if (!info.used) {
                         unusedCount++;
                     }
                 }
             }
-            
-            // Проверка font-face
+
             for (const [fontFamily, info] of state.unusedFontFaces.entries()) {
                 if (!info.used) {
-                    const isUsed = SelectorManager.checkFontFaceUsage(fontFamily);
-                    if (isUsed) {
+                    let reallyUsed = false;
+
+                    if (this.isInBlackList(fontFamily)) {
+                        info.used = false;
+                    } else if (this.isInWhiteList(fontFamily)) {
                         info.used = true;
                     } else {
+                        reallyUsed = this.checkFontFaceUsage(fontFamily);
+                        info.used = reallyUsed;
+                    }
+
+                    if (!info.used) {
                         unusedCount++;
                     }
                 }
             }
-            
-            // Проверка counter-style
+
             for (const [name, info] of state.unusedCounterStyles.entries()) {
                 if (!info.used) {
-                    const isUsed = SelectorManager.checkCounterStyleUsage(name);
-                    if (isUsed) {
+                    let reallyUsed = false;
+
+                    if (this.isInBlackList(name)) {
+                        info.used = false;
+                    } else if (this.isInWhiteList(name)) {
                         info.used = true;
                     } else {
+                        reallyUsed = this.checkCounterStyleUsage(name);
+                        info.used = reallyUsed;
+                    }
+
+                    if (!info.used) {
                         unusedCount++;
                     }
                 }
             }
-            
+
             state.totalUnusedCount = unusedCount;
             UIManager.updateButton(unusedCount);
         }
@@ -432,7 +468,7 @@
                 for (const element of elements) {
                     const computedStyle = window.getComputedStyle(element);
                     const animationName = computedStyle.getPropertyValue('animation-name');
-                    
+
                     if (animationName && animationName !== 'none') {
                         const names = animationName.split(',').map(n => n.trim());
                         if (names.includes(keyframeName)) {
@@ -440,7 +476,7 @@
                         }
                     }
                 }
-                
+
                 // Проверяем inline стили
                 const inlineElements = document.querySelectorAll('[style*="animation"]');
                 for (const element of inlineElements) {
@@ -449,7 +485,7 @@
                         return true;
                     }
                 }
-                
+
                 return false;
             } catch (error) {
                 console.warn('Ошибка проверки keyframe:', error);
@@ -465,7 +501,7 @@
                 for (const element of elements) {
                     const computedStyle = window.getComputedStyle(element);
                     const fontFamilyValue = computedStyle.getPropertyValue('font-family');
-                    
+
                     if (fontFamilyValue) {
                         const fonts = fontFamilyValue.split(',').map(f => f.trim().replace(/['"]/g, ''));
                         if (fonts.includes(fontFamily)) {
@@ -473,7 +509,7 @@
                         }
                     }
                 }
-                
+
                 // Проверяем inline стили
                 const inlineElements = document.querySelectorAll('[style*="font-family"]');
                 for (const element of inlineElements) {
@@ -482,7 +518,7 @@
                         return true;
                     }
                 }
-                
+
                 return false;
             } catch (error) {
                 console.warn('Ошибка проверки font-face:', error);
@@ -497,74 +533,74 @@
                 const elements = document.querySelectorAll('*');
                 for (const element of elements) {
                     const computedStyle = window.getComputedStyle(element);
-                    
+
                     const listStyleType = computedStyle.getPropertyValue('list-style-type');
                     if (listStyleType === counterStyleName) {
                         return true;
                     }
-                    
+
                     const counterReset = computedStyle.getPropertyValue('counter-reset');
                     if (counterReset && counterReset.includes(counterStyleName)) {
                         return true;
                     }
-                    
+
                     const counterIncrement = computedStyle.getPropertyValue('counter-increment');
                     if (counterIncrement && counterIncrement.includes(counterStyleName)) {
                         return true;
                     }
                 }
-                
+
                 return false;
             } catch (error) {
                 console.warn('Ошибка проверки counter-style:', error);
                 return true; // Считаем используемым при ошибке
             }
-        }        
+        }
 
         static groupSelectorsByFile() {
             const grouped = {};
-            
+
             // Обычные селекторы
             for (const [selector, info] of state.unusedSelectors.entries()) {
                 const href = info.href;
                 if (!grouped[href]) grouped[href] = [];
-                grouped[href].push({ 
-                    selector, 
+                grouped[href].push({
+                    selector,
                     media: info.media,
-                    used: info.used 
+                    used: info.used
                 });
             }
-            
+
             // Keyframes
             for (const [keyframeName, info] of state.unusedKeyframes.entries()) {
                 const href = info.href;
                 if (!grouped[href]) grouped[href] = [];
-                grouped[href].push({ 
+                grouped[href].push({
                     keyframes: keyframeName,
-                    used: info.used 
+                    used: info.used
                 });
             }
-            
+
             // Font-faces
             for (const [fontFamily, info] of state.unusedFontFaces.entries()) {
                 const href = info.href;
                 if (!grouped[href]) grouped[href] = [];
-                grouped[href].push({ 
+                grouped[href].push({
                     'font-face': fontFamily,
-                    used: info.used 
+                    used: info.used
                 });
             }
-            
+
             // Counter-styles
             for (const [counterStyleName, info] of state.unusedCounterStyles.entries()) {
                 const href = info.href;
                 if (!grouped[href]) grouped[href] = [];
-                grouped[href].push({ 
+                grouped[href].push({
                     'counter-style': counterStyleName,
-                    used: info.used 
+                    used: info.used
                 });
             }
-            
+
             return grouped;
         }
 
@@ -574,7 +610,7 @@
             if (!name || !state.settings.keyframes) return;
             const relativePath = CSSUtils.getRelativePathFromHref(href);
             if (!state.currentPageSelectors.has(relativePath)) return;
-            
+
             if (!state.unusedKeyframes.has(name)) {
                 state.unusedKeyframes.set(name, {
                     href: relativePath,
@@ -588,7 +624,7 @@
             if (!fontFamily || !state.settings.font_face) return;
             const relativePath = CSSUtils.getRelativePathFromHref(href);
             if (!state.currentPageSelectors.has(relativePath)) return;
-            
+
             if (!state.unusedFontFaces.has(fontFamily)) {
                 state.unusedFontFaces.set(fontFamily, {
                     href: relativePath,
@@ -602,7 +638,7 @@
             if (!name || !state.settings.counter_style) return;
             const relativePath = CSSUtils.getRelativePathFromHref(href);
             if (!state.currentPageSelectors.has(relativePath)) return;
-            
+
             if (!state.unusedCounterStyles.has(name)) {
                 state.unusedCounterStyles.set(name, {
                     href: relativePath,
@@ -610,7 +646,29 @@
                 });
             }
         }
-        
+
+        static parseListFromString(listString) {
+            if (!listString || typeof listString !== 'string') {
+                return new Set();
+            }
+            return new Set(
+                listString
+                    .split(',')
+                    .map(s => s.trim())
+                    .filter(s => s.length > 0)
+            );
+        }
+
+        static isInWhiteList(selector) {
+            const whiteList = this.parseListFromString(state.settings.used_css_list);
+            return whiteList.has(selector);
+        }
+
+        static isInBlackList(selector) {
+            const blackList = this.parseListFromString(state.settings.unused_css_list);
+            return blackList.has(selector);
+        }
+
     }
 
     // Processing CSS rules and stylesheets
@@ -618,7 +676,7 @@
         static async processStyleSheet(sheet) {
             let rules;
             let cssContent = null;
-            
+
             try {
                 rules = sheet.cssRules;
             } catch (error) {
@@ -631,16 +689,16 @@
                     return;
                 }
             }
-            
+
             if (!rules) return;
-            
+
             const baseHref = sheet.href || 'external';
-            
+
             // Обрабатываем основные правила
             for (const rule of rules) {
                 await this.processRule(rule, baseHref);
             }
-            
+
             // Обрабатываем импорты, если включена соответствующая опция
             if (CONFIG.PARSE_CSS_IMPORTS && cssContent) {
                 await this.processImports(cssContent, baseHref);
@@ -662,10 +720,10 @@
                 console.warn(`Файл недоступен: ${sheet.href}`);
                 return null;
             }
-            
+
             const cssText = await CSSUtils.loadStyleSheetContent(sheet.href);
             if (!cssText) return null;
-            
+
             const rules = CSSUtils.parseCSSText(cssText);
             return {
                 rules: rules,
@@ -722,12 +780,12 @@
             try {
                 const style = fontFaceRule.style;
                 const fontFamily = style.getPropertyValue('font-family');
-                
+
                 if (fontFamily) {
                     // Убираем кавычки и лишние пробелы
                     return fontFamily.replace(/['"]/g, '').trim();
                 }
-                
+
                 return null;
             } catch (error) {
                 console.warn('Ошибка извлечения font-family:', error);
@@ -749,18 +807,18 @@
         static async processImports(cssContent, baseHref) {
             // Обрабатывает все @import директивы в CSS контенте
             const imports = CSSUtils.parseImportUrls(cssContent);
-            
+
             for (const importInfo of imports) {
                 try {
                     const importResults = await CSSUtils.loadImportedCSS(importInfo.url, baseHref);
-                    
+
                     for (const result of importResults) {
                         const importHref = result.url;
                         const relativePath = CSSUtils.getRelativePathFromHref(importHref);
-                        
+
                         // Добавляем файл в список текущих селекторов страницы
                         state.currentPageSelectors.add(relativePath);
-                        
+
                         // Обрабатываем правила из импортированного файла
                         if (result.rules) {
                             for (const rule of result.rules) {
@@ -781,13 +839,13 @@
                 case CSSRule.STYLE_RULE:
                     SelectorManager.addSelector(rule.selectorText, href, mediaContext);
                     break;
-                    
+
                 case CSSRule.MEDIA_RULE:
                     // Комбинируем media контексты
-                    const combinedMedia = mediaContext 
+                    const combinedMedia = mediaContext
                         ? `${mediaContext} and ${rule.media.mediaText}`
                         : rule.media.mediaText;
-                    
+
                     for (const subRule of rule.cssRules) {
                         if (subRule.type === CSSRule.STYLE_RULE) {
                             SelectorManager.addSelector(subRule.selectorText, href, combinedMedia);
@@ -796,13 +854,13 @@
                         }
                     }
                     break;
-                    
+
                 case CSSRule.KEYFRAMES_RULE:
                     if (rule.name && state.settings.keyframes) {
                         SelectorManager.addKeyframe(rule.name, href);
                     }
                     break;
-                    
+
                 case CSSRule.FONT_FACE_RULE:
                     if (state.settings.font_face) {
                         const fontFamily = this.extractFontFamily(rule);
@@ -811,13 +869,13 @@
                         }
                     }
                     break;
-                    
+
                 case 11: // CSSRule.COUNTER_STYLE_RULE
                     if (rule.name && state.settings.counter_style) {
                         SelectorManager.addCounterStyle(rule.name, href);
                     }
                     break;
-                    
+
                 case CSSRule.SUPPORTS_RULE:
                     for (const subRule of rule.cssRules) {
                         await this.processImportedRule(subRule, href, mediaContext);
@@ -825,7 +883,7 @@
                     break;
             }
         }
-        
+
     }
 
     // Settings dialog and fetch/save
@@ -879,32 +937,30 @@
             }
         }
 
+
         static showSettings() {
             const overlay = document.createElement('div');
             overlay.id = CONFIG.SETTINGS_ID;
-            overlay.style.cssText = `
-                position:fixed;top:0;left:0;width:100%;height:100%;
-                background:rgba(0,0,0,0.5);z-index:10001;display:flex;
-                align-items:center;justify-content:center;`;
+            overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;' +
+                'background:rgba(0,0,0,0.5);z-index:10001;display:flex;' +
+                'align-items:center;justify-content:center;';
 
             const modal = document.createElement('div');
-            modal.style.cssText = `
-                background:white;border-radius:8px;padding:20px;
-                max-width:600px;width:90%;max-height:80%;overflow-y:auto;color:#333;`;
+            modal.style.cssText = 'background:white;border-radius:8px;padding:20px;' +
+                'max-width:700px;width:90%;max-height:80%;overflow-y:auto;color:#333;';
 
             const title = document.createElement('h3');
             title.textContent = 'Настройки защиты селекторов';
-            title.style.cssText = `margin:0 0 15px 0;color:#333;font-size:18px;`;
+            title.style.cssText = 'margin:0 0 15px 0;color:#333;font-size:18px;';
 
+            // список настроек
             const settingsList = [
                 { key: 'media', label: '@media запросы' },
                 { key: 'media_print', label: '@media print запросы' },
                 { key: 'keyframes', label: '@keyframes анимации' },
                 { key: 'font_face', label: '@font-face шрифты' },
-                { key: 'import', label: '@import импорты' },
                 { key: 'supports', label: '@supports поддержка' },
                 { key: 'page', label: '@page печать' },
-                { key: 'charset', label: '@charset кодировка' },
                 { key: 'counter_style', label: '@counter-style счетчики' },
                 { key: 'layer', label: '@layer слои' },
                 { key: 'pseudo_classes', label: 'Псевдо-классы (:hover, :active)' },
@@ -931,41 +987,146 @@
 
             modal.appendChild(title);
 
+            // Добавляем чекбоксы настроек
             settingsList.forEach(setting => {
                 const item = document.createElement('div');
-                item.style.cssText = `margin-bottom:10px;display:flex;align-items:center;`;
+                item.style.cssText = 'margin-bottom:10px;display:flex;align-items:center;';
 
                 const checkbox = document.createElement('input');
                 checkbox.type = 'checkbox';
                 checkbox.id = setting.key;
                 checkbox.checked = state.settings[setting.key];
-                checkbox.style.cssText = `margin-right:10px;`;
+                checkbox.style.cssText = 'margin-right:10px;';
 
                 const label = document.createElement('label');
                 label.htmlFor = setting.key;
                 label.textContent = setting.label;
-                label.style.cssText = `cursor:pointer;flex:1;`;
+                label.style.cssText = 'cursor:pointer;flex:1;';
 
                 item.appendChild(checkbox);
                 item.appendChild(label);
                 modal.appendChild(item);
             });
 
+            // Добавляем разделитель
+            const separator1 = document.createElement('hr');
+            separator1.style.cssText = 'margin:20px 0;border:1px solid #ddd;';
+            modal.appendChild(separator1);
+
+            // Добавляем textarea для белого списка
+            const whiteListLabel = document.createElement('label');
+            whiteListLabel.textContent = 'Белый список селекторов (через запятую):';
+            whiteListLabel.style.cssText = 'display:block;margin-bottom:5px;font-weight:bold;';
+            modal.appendChild(whiteListLabel);
+
+            const whiteListTextarea = document.createElement('textarea');
+            whiteListTextarea.id = 'used_css_list';
+            whiteListTextarea.value = state.settings.used_css_list || '';
+            whiteListTextarea.placeholder = 'Например: .button, #header, .*-item';
+            whiteListTextarea.style.cssText = 'width:100%;height:60px;margin-bottom:15px;' +
+                'padding:8px;border:1px solid #ddd;border-radius:4px;' +
+                'font-family:monospace;font-size:12px;resize:vertical;';
+            modal.appendChild(whiteListTextarea);
+
+            // Добавляем textarea для черного списка  
+            const blackListLabel = document.createElement('label');
+            blackListLabel.textContent = 'Черный список селекторов (через запятую):';
+            blackListLabel.style.cssText = 'display:block;margin-bottom:5px;font-weight:bold;';
+            modal.appendChild(blackListLabel);
+
+            const blackListTextarea = document.createElement('textarea');
+            blackListTextarea.id = 'unused_css_list';
+            blackListTextarea.value = state.settings.unused_css_list || '';
+            blackListTextarea.placeholder = 'Например: .old-class, #deprecated, .*-btn';
+            blackListTextarea.style.cssText = 'width:100%;height:60px;margin-bottom:15px;' +
+                'padding:8px;border:1px solid #ddd;border-radius:4px;' +
+                'font-family:monospace;font-size:12px;resize:vertical;';
+            modal.appendChild(blackListTextarea);
+
+            // Добавляем разделитель
+            const separator2 = document.createElement('hr');
+            separator2.style.cssText = 'margin:20px 0;border:1px solid #ddd;';
+            modal.appendChild(separator2);
+
+            // Добавляем радио-кнопки для режима генерации
+            const generationModeLabel = document.createElement('label');
+            generationModeLabel.textContent = 'Режим генерации файлов:';
+            generationModeLabel.style.cssText = 'display:block;margin-bottom:10px;font-weight:bold;';
+            modal.appendChild(generationModeLabel);
+
+            const radioContainer = document.createElement('div');
+            radioContainer.style.cssText = 'margin-bottom:15px;';
+
+            // Первая радио-кнопка
+            const radio1Container = document.createElement('div');
+            radio1Container.style.cssText = 'margin-bottom:8px;display:flex;align-items:center;';
+
+            const radio1 = document.createElement('input');
+            radio1.type = 'radio';
+            radio1.name = 'generation_mode';
+            radio1.id = 'mode_remove_unused';
+            radio1.value = 'remove_unused';
+            radio1.checked = (state.settings.generation_mode || 'remove_unused') === 'remove_unused';
+            radio1.style.cssText = 'margin-right:8px;';
+
+            const radio1Label = document.createElement('label');
+            radio1Label.htmlFor = 'mode_remove_unused';
+            radio1Label.textContent = 'При генерации убираем все неиспользуемые';
+            radio1Label.style.cssText = 'cursor:pointer;';
+
+            radio1Container.appendChild(radio1);
+            radio1Container.appendChild(radio1Label);
+
+            // Вторая радио-кнопка
+            const radio2Container = document.createElement('div');
+            radio2Container.style.cssText = 'margin-bottom:8px;display:flex;align-items:center;';
+
+            const radio2 = document.createElement('input');
+            radio2.type = 'radio';
+            radio2.name = 'generation_mode';
+            radio2.id = 'mode_keep_used';
+            radio2.value = 'keep_used';
+            radio2.checked = (state.settings.generation_mode || 'remove_unused') === 'keep_used';
+            radio2.style.cssText = 'margin-right:8px;';
+
+            const radio2Label = document.createElement('label');
+            radio2Label.htmlFor = 'mode_keep_used';
+            radio2Label.textContent = 'При генерации убираем всё кроме используемых';
+            radio2Label.style.cssText = 'cursor:pointer;';
+
+            radio2Container.appendChild(radio2);
+            radio2Container.appendChild(radio2Label);
+
+            radioContainer.appendChild(radio1Container);
+            radioContainer.appendChild(radio2Container);
+            modal.appendChild(radioContainer);
+
+            // Кнопки управления
             const buttons = document.createElement('div');
-            buttons.style.cssText = `margin-top:20px;display:flex;gap:10px;justify-content:flex-end;`;
+            buttons.style.cssText = 'margin-top:20px;display:flex;gap:10px;justify-content:flex-end;';
 
             const saveBtn = document.createElement('button');
             saveBtn.textContent = 'Сохранить';
-            saveBtn.style.cssText = `
-                padding:8px 16px;background:#27ae60;color:white;
-                border:none;border-radius:4px;cursor:pointer;`;
+            saveBtn.style.cssText = 'padding:8px 16px;background:#27ae60;color:white;' +
+                'border:none;border-radius:4px;cursor:pointer;';
 
             saveBtn.onclick = async () => {
                 const newSettings = {};
+
+                // Собираем настройки чекбоксов
                 settingsList.forEach(setting => {
                     const checkbox = document.getElementById(setting.key);
                     newSettings[setting.key] = checkbox.checked;
                 });
+
+                // Собираем текстовые списки
+                newSettings.used_css_list = whiteListTextarea.value.trim();
+                newSettings.unused_css_list = blackListTextarea.value.trim();
+
+                // Собираем режим генерации
+                const checkedRadio = document.querySelector('input[name="generation_mode"]:checked');
+                newSettings.generation_mode = checkedRadio ? checkedRadio.value : 'remove_unused';
+
                 try {
                     await SettingsManager.saveSettings(newSettings);
                     overlay.remove();
@@ -978,9 +1139,8 @@
 
             const cancelBtn = document.createElement('button');
             cancelBtn.textContent = 'Отмена';
-            cancelBtn.style.cssText = `
-                padding:8px 16px;background:#95a5a6;color:white;
-                border:none;border-radius:4px;cursor:pointer;`;
+            cancelBtn.style.cssText = 'padding:8px 16px;background:#95a5a6;color:white;' +
+                'border:none;border-radius:4px;cursor:pointer;';
             cancelBtn.onclick = () => overlay.remove();
 
             buttons.appendChild(cancelBtn);
@@ -991,6 +1151,7 @@
             overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
             document.body.appendChild(overlay);
         }
+
     }
 
     // UI: floating button, menu, notifications
@@ -1165,7 +1326,7 @@
 
                     //if (typeof detector !== 'undefined' && detector.state.isRunning) {
                     //await detector.stop();
-                    //}                    
+                    //}
 
                     this.showNotification('Данные успешно сброшены', 'success');
                 }
@@ -1293,13 +1454,13 @@
 
                 const fileType = state.importedFiles.has(file) ? '📥 (импорт)' : '📄';
                 reportHtml += '<div style="margin-bottom:10px;'
-                + 'border:1px solid #444;border-radius:4px;'
-                + 'padding:8px;word-break:break-word;'
-                + 'background:#333;">'
-                + '<strong style="display:block;color:#8ab4f8;'
-                + 'margin-bottom:4px;">'
-                + fileType + ' ' + file + ' (' + selectors.length + ' селекторов)'
-                + '</strong>';
+                    + 'border:1px solid #444;border-radius:4px;'
+                    + 'padding:8px;word-break:break-word;'
+                    + 'background:#333;">'
+                    + '<strong style="display:block;color:#8ab4f8;'
+                    + 'margin-bottom:4px;">'
+                    + fileType + ' ' + file + ' (' + selectors.length + ' селекторов)'
+                    + '</strong>';
 
                 let list = selectors.slice(0, 10).map(s => s.selector).join(', ');
                 if (selectors.length > 10) {
