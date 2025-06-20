@@ -202,24 +202,34 @@ class RemoveUnusedCSSProcessor
      */
     private function updateBlackWhiteLists(): void
     {
-        // Обработка белого списка
         $this->whitelistPatterns = [];
         if (!empty($this->settings['used_css_list'])) {
-            $whitelistItems = array_map('trim', explode(',', $this->settings['used_css_list']));
+            // Используем перенос строки как разделитель вместо запятой
+            $whitelistItems = array_filter(
+                array_map('trim', explode("\n", $this->settings['used_css_list'])),
+                function($item) { return !empty($item); }
+            );
+            
             foreach ($whitelistItems as $item) {
-                if (!empty($item)) {
-                    $this->whitelistPatterns[] = $this->convertWildcardToRegex($item);
+                $normalizedPattern = $this->normalizePattern($item);
+                if (!empty($normalizedPattern)) {
+                    $this->whitelistPatterns[] = $this->convertWildcardToRegex($normalizedPattern);
                 }
             }
         }
         
-        // Обработка черного списка
         $this->blacklistPatterns = [];
         if (!empty($this->settings['unused_css_list'])) {
-            $blacklistItems = array_map('trim', explode(',', $this->settings['unused_css_list']));
+            // Используем перенос строки как разделитель вместо запятой
+            $blacklistItems = array_filter(
+                array_map('trim', explode("\n", $this->settings['unused_css_list'])),
+                function($item) { return !empty($item); }
+            );
+            
             foreach ($blacklistItems as $item) {
-                if (!empty($item)) {
-                    $this->blacklistPatterns[] = $this->convertWildcardToRegex($item);
+                $normalizedPattern = $this->normalizePattern($item);
+                if (!empty($normalizedPattern)) {
+                    $this->blacklistPatterns[] = $this->convertWildcardToRegex($normalizedPattern);
                 }
             }
         }
@@ -231,13 +241,61 @@ class RemoveUnusedCSSProcessor
      */
     private function convertWildcardToRegex(string $pattern): string
     {
-        // Экранируем специальные символы regex, кроме *
-        $escaped = preg_quote($pattern, '/');
-        // Заменяем экранированные * на regex паттерн
-        $regex = str_replace('\*', '.*', $escaped);
-        // Возвращаем полный regex паттерн
+        // Экранируем все спецсимволы regex, кроме * и ?
+        $escaped = $this->escapeRegexSpecialChars($pattern);
+        
+        // Заменяем wildcard символы на соответствующие regex паттерны
+        $regex = str_replace(
+            ['\\*', '\\?'], // экранированные версии
+            ['.*', '.'],    // regex эквиваленты
+            $escaped
+        );
+        
         return '/^' . $regex . '$/i';
     }
+
+
+    /**
+     * МЕТОД: Нормализация паттерна - очистка и валидация
+     */
+    private function normalizePattern(string $pattern): string
+    {
+        // Убираем лишние пробелы
+        $pattern = trim($pattern);
+        
+        // Игнорируем пустые строки и комментарии (начинающиеся с #)
+        if (empty($pattern) || $pattern[0] === '#') {
+            return '';
+        }
+        
+        // Убираем множественные пробелы внутри паттерна
+        $pattern = preg_replace('/\s+/', ' ', $pattern);
+        
+        return $pattern;
+    }
+
+    /**
+     * МЕТОД: Экранирование спецсимволов regex (кроме wildcard)
+     */
+    private function escapeRegexSpecialChars(string $string): string
+    {
+        // Список всех спецсимволов regex
+        $regexSpecialChars = [
+            '\\', '^', '$', '.', '[', ']', '|', '(', ')', '+', '{', '}', '-'
+        ];
+        
+        // Экранируем каждый спецсимвол, НО НЕ экранируем * и ?
+        foreach ($regexSpecialChars as $char) {
+            $string = str_replace($char, '\\' . $char, $string);
+        }
+        
+        // Теперь экранируем * и ?, чтобы их можно было заменить позже
+        $string = str_replace('*', '\\*', $string);
+        $string = str_replace('?', '\\?', $string);
+        
+        return $string;
+    }
+
 
     /**
      * Проверяет попадание селектора в черный или белый список
