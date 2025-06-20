@@ -263,8 +263,8 @@ class RemoveUnusedCSSProcessor
         // Убираем лишние пробелы
         $pattern = trim($pattern);
         
-        // Игнорируем пустые строки и комментарии (начинающиеся с #)
-        if (empty($pattern) || $pattern[0] === '#') {
+        // Игнорируем пустые строки
+        if (empty($pattern)) {
             return '';
         }
         
