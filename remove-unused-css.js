@@ -993,196 +993,266 @@
             }
         }
 
-
         static showSettings() {
             const overlay = document.createElement('div');
             overlay.id = CONFIG.SETTINGS_ID;
             overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;' +
-                'background:rgba(0,0,0,0.5);z-index:10001;display:flex;' +
-                'align-items:center;justify-content:center;';
-
+                'background:rgba(0,0,0,0.6);z-index:10001;display:flex;' +
+                'align-items:center;justify-content:center;font-family:system-ui,-apple-system,sans-serif;';
+            
             const modal = document.createElement('div');
-            modal.style.cssText = 'background:white;border-radius:8px;padding:20px;' +
-                'max-width:700px;width:90%;max-height:80%;overflow-y:auto;color:#333;';
-
-            const title = document.createElement('h3');
+            modal.style.cssText = 'background:#ffffff;border-radius:12px;padding:32px;' +
+                'max-width:800px;width:95%;max-height:85%;overflow-y:auto;color:#2c3e50;' +
+                'box-shadow:0 20px 60px rgba(0,0,0,0.3);border:1px solid #e1e8ed;';
+            
+            const title = document.createElement('h2');
             title.textContent = 'Настройки защиты селекторов';
-            title.style.cssText = 'margin:0 0 15px 0;color:#333;font-size:18px;';
-
-            // список настроек
-            const settingsList = [
-                { key: 'media', label: '@media запросы' },
-                { key: 'media_print', label: '@media print запросы' },
-                { key: 'keyframes', label: '@keyframes анимации' },
-                { key: 'font_face', label: '@font-face шрифты' },
-                { key: 'supports', label: '@supports поддержка' },
-                { key: 'page', label: '@page печать' },
-                { key: 'counter_style', label: '@counter-style счетчики' },
-                { key: 'layer', label: '@layer слои' },
-                { key: 'pseudo_classes', label: 'Псевдо-классы (:hover, :active)' },
-                { key: 'pseudo_elements', label: 'Псевдо-элементы (::before, ::after)' },
-                { key: 'attribute_selectors', label: 'Атрибутные селекторы [attr]' },
-                { key: 'css_variables', label: 'CSS-переменные (--variable)' },
-                { key: 'vendor_prefixes', label: 'Браузерные префиксы (-webkit-, -moz-)' },
-                { key: 'adjacent_selectors', label: 'Соседние селекторы (+)' },
-                { key: 'child_selectors', label: 'Дочерние селекторы (>)' },
-                { key: 'general_siblings', label: 'Общие братские селекторы (~)' },
-                { key: 'css_functions', label: 'CSS-функции (calc, var, url)' },
-                { key: 'animations', label: 'Анимации и переходы' },
-                { key: 'transforms', label: 'Трансформации' },
-                { key: 'transitions', label: 'Переходы' },
-                { key: 'percentages', label: 'Процентные значения' },
-                { key: 'escapes', label: 'Экранированные символы' },
-                { key: 'colors', label: 'Цветовые функции (rgb, hsl)' },
-                { key: 'gradients', label: 'Градиенты' },
-                { key: 'filters', label: 'Фильтры' },
-                { key: 'masks', label: 'Маски и обрезка' },
-                { key: 'nth_selectors', label: 'nth-селекторы' },
-                { key: 'logical_selectors', label: 'Логические селекторы (not, is, where, has)' }
+            title.style.cssText = 'margin:0 0 24px 0;color:#2c3e50;font-size:24px;font-weight:600;text-align:center;';
+            
+            // Группировка настроек
+            const settingsGroups = [
+                {
+                    title: 'Ат-правила и структуры CSS',
+                    icon: '📋',
+                    settings: [
+                        { key: 'media', label: '@media запросы' },
+                        { key: 'media_print', label: '@media print запросы' },
+                        { key: 'keyframes', label: '@keyframes анимации' },
+                        { key: 'font_face', label: '@font-face шрифты' },
+                        { key: 'supports', label: '@supports поддержка' },
+                        { key: 'page', label: '@page печать' },
+                        { key: 'counter_style', label: '@counter-style счетчики' },
+                        { key: 'layer', label: '@layer слои' }
+                    ]
+                },
+                {
+                    title: 'Селекторы и их вариации',
+                    icon: '🎯',
+                    settings: [
+                        { key: 'pseudo_classes', label: 'Псевдо-классы (:hover, :active)' },
+                        { key: 'pseudo_elements', label: 'Псевдо-элементы (::before, ::after)' },
+                        { key: 'attribute_selectors', label: 'Атрибутные селекторы [attr]' },
+                        { key: 'adjacent_selectors', label: 'Соседние селекторы (+)' },
+                        { key: 'child_selectors', label: 'Дочерние селекторы (>)' },
+                        { key: 'general_siblings', label: 'Общие братские селекторы (~)' },
+                        { key: 'nth_selectors', label: 'nth-селекторы' },
+                        { key: 'logical_selectors', label: 'Логические селекторы (not, is, where, has)' }
+                    ]
+                },
+                {
+                    title: 'CSS-функции и переменные',
+                    icon: '⚙️',
+                    settings: [
+                        { key: 'css_variables', label: 'CSS-переменные (--variable)' },
+                        { key: 'css_functions', label: 'CSS-функции (calc, var, url)' },
+                        { key: 'vendor_prefixes', label: 'Браузерные префиксы (-webkit-, -moz-)' },
+                        { key: 'percentages', label: 'Процентные значения' },
+                        { key: 'escapes', label: 'Экранированные символы' },
+                        { key: 'colors', label: 'Цветовые функции (rgb, hsl)' }
+                    ]
+                },
+                {
+                    title: 'Эффекты и визуальные свойства',
+                    icon: '✨',
+                    settings: [
+                        { key: 'animations', label: 'Анимации и переходы' },
+                        { key: 'transforms', label: 'Трансформации' },
+                        { key: 'transitions', label: 'Переходы' },
+                        { key: 'gradients', label: 'Градиенты' },
+                        { key: 'filters', label: 'Фильтры' },
+                        { key: 'masks', label: 'Маски и обрезка' }
+                    ]
+                }
             ];
-
+            
             modal.appendChild(title);
-
-            // Добавляем чекбоксы настроек
-            settingsList.forEach(setting => {
-                const item = document.createElement('div');
-                item.style.cssText = 'margin-bottom:10px;display:flex;align-items:center;';
-
-                const checkbox = document.createElement('input');
-                checkbox.type = 'checkbox';
-                checkbox.id = setting.key;
-                checkbox.checked = state.settings[setting.key];
-                checkbox.style.cssText = 'margin-right:10px;';
-
-                const label = document.createElement('label');
-                label.htmlFor = setting.key;
-                label.textContent = setting.label;
-                label.style.cssText = 'cursor:pointer;flex:1;';
-
-                item.appendChild(checkbox);
-                item.appendChild(label);
-                modal.appendChild(item);
+            
+            // Создание групп настроек
+            settingsGroups.forEach((group, groupIndex) => {
+                const groupContainer = document.createElement('div');
+                groupContainer.style.cssText = 'margin-bottom:24px;';
+                
+                const groupTitle = document.createElement('h3');
+                groupTitle.innerHTML = group.icon + ' ' + group.title;
+                groupTitle.style.cssText = 'margin:0 0 16px 0;color:#34495e;font-size:18px;font-weight:500;' +
+                    'padding-bottom:8px;border-bottom:2px solid #ecf0f1;';
+                groupContainer.appendChild(groupTitle);
+                
+                const groupGrid = document.createElement('div');
+                groupGrid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;';
+                
+                group.settings.forEach(setting => {
+                    const item = document.createElement('div');
+                    item.style.cssText = 'display:flex;align-items:center;padding:8px 12px;' +
+                        'background:#f8f9fa;border-radius:6px;border:1px solid #e9ecef;';
+                    
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.id = setting.key;
+                    checkbox.checked = state.settings[setting.key];
+                    checkbox.style.cssText = 'margin-right:12px;width:18px;height:18px;cursor:pointer;';
+                    
+                    const label = document.createElement('label');
+                    label.htmlFor = setting.key;
+                    label.textContent = setting.label;
+                    label.style.cssText = 'cursor:pointer;flex:1;font-size:14px;line-height:1.4;';
+                    
+                    item.appendChild(checkbox);
+                    item.appendChild(label);
+                    groupGrid.appendChild(item);
+                });
+                
+                groupContainer.appendChild(groupGrid);
+                modal.appendChild(groupContainer);
             });
-
-            // Добавляем разделитель
-            const separator1 = document.createElement('hr');
-            separator1.style.cssText = 'margin:20px 0;border:1px solid #ddd;';
+            
+            // Разделитель
+            const separator1 = document.createElement('div');
+            separator1.style.cssText = 'height:1px;background:#e1e8ed;margin:32px 0;';
             modal.appendChild(separator1);
-
-            // Добавляем textarea для белого списка
+            
+            // Списки селекторов
+            const listsContainer = document.createElement('div');
+            listsContainer.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:24px;';
+            
+            // Белый список
+            const whiteListContainer = document.createElement('div');
             const whiteListLabel = document.createElement('label');
-            whiteListLabel.textContent = 'Белый список селекторов (через запятую):';
-            whiteListLabel.style.cssText = 'display:block;margin-bottom:5px;font-weight:bold;';
-            modal.appendChild(whiteListLabel);
-
+            whiteListLabel.innerHTML = '✅ <strong>Белый список селекторов</strong>';
+            whiteListLabel.style.cssText = 'display:block;margin-bottom:8px;font-size:16px;color:#27ae60;';
+            whiteListContainer.appendChild(whiteListLabel);
+            
             const whiteListTextarea = document.createElement('textarea');
             whiteListTextarea.id = 'used_css_list';
             whiteListTextarea.value = state.settings.used_css_list || '';
-            whiteListTextarea.placeholder = 'Каждый паттерн с новой строки:\n.button\n#header\n.*-item\n*-component\nmy-class-?';
-            whiteListTextarea.style.cssText = 'width:100%;height:60px;margin-bottom:15px;' +
-                'padding:8px;border:1px solid #ddd;border-radius:4px;' +
-                'font-family:monospace;font-size:12px;resize:vertical;';
-            modal.appendChild(whiteListTextarea);
-
-            // Добавляем textarea для черного списка  
+            whiteListTextarea.placeholder = 'Каждый селектор с новой строки:\n.button\n#header\n.nav-item';
+            whiteListTextarea.style.cssText = 'width:100%;height:120px;padding:12px;' +
+                'border:2px solid #27ae60;border-radius:8px;font-family:Consolas,Monaco,monospace;' +
+                'font-size:13px;resize:vertical;background:#f8fff8;';
+            whiteListContainer.appendChild(whiteListTextarea);
+            
+            // Черный список
+            const blackListContainer = document.createElement('div');
             const blackListLabel = document.createElement('label');
-            blackListLabel.textContent = 'Черный список селекторов (через запятую):';
-            blackListLabel.style.cssText = 'display:block;margin-bottom:5px;font-weight:bold;';
-            modal.appendChild(blackListLabel);
-
+            blackListLabel.innerHTML = '❌ <strong>Черный список селекторов</strong>';
+            blackListLabel.style.cssText = 'display:block;margin-bottom:8px;font-size:16px;color:#e74c3c;';
+            blackListContainer.appendChild(blackListLabel);
+            
             const blackListTextarea = document.createElement('textarea');
             blackListTextarea.id = 'unused_css_list';
             blackListTextarea.value = state.settings.unused_css_list || '';
-            blackListTextarea.placeholder = 'Каждый паттерн с новой строки:\n.old-class\n#deprecated\n.*-btn\ntest-*\ndebug-?-class';
-            blackListTextarea.style.cssText = 'width:100%;height:60px;margin-bottom:15px;' +
-                'padding:8px;border:1px solid #ddd;border-radius:4px;' +
-                'font-family:monospace;font-size:12px;resize:vertical;';
-            modal.appendChild(blackListTextarea);
-
-            // Добавляем разделитель
-            const separator2 = document.createElement('hr');
-            separator2.style.cssText = 'margin:20px 0;border:1px solid #ddd;';
+            blackListTextarea.placeholder = 'Каждый селектор с новой строки:\n.old-class\n#deprecated\n.test-btn';
+            blackListTextarea.style.cssText = 'width:100%;height:120px;padding:12px;' +
+                'border:2px solid #e74c3c;border-radius:8px;font-family:Consolas,Monaco,monospace;' +
+                'font-size:13px;resize:vertical;background:#fff8f8;';
+            blackListContainer.appendChild(blackListTextarea);
+            
+            listsContainer.appendChild(whiteListContainer);
+            listsContainer.appendChild(blackListContainer);
+            modal.appendChild(listsContainer);
+            
+            // Разделитель
+            const separator2 = document.createElement('div');
+            separator2.style.cssText = 'height:1px;background:#e1e8ed;margin:24px 0;';
             modal.appendChild(separator2);
-
-            // Добавляем радио-кнопки для режима генерации
-            const generationModeLabel = document.createElement('label');
-            generationModeLabel.textContent = 'Режим генерации файлов:';
-            generationModeLabel.style.cssText = 'display:block;margin-bottom:10px;font-weight:bold;';
-            modal.appendChild(generationModeLabel);
-
+            
+            // Режим генерации
+            const generationContainer = document.createElement('div');
+            generationContainer.style.cssText = 'margin-bottom:32px;';
+            
+            const generationTitle = document.createElement('h3');
+            generationTitle.innerHTML = '🛠️ Режим генерации файлов';
+            generationTitle.style.cssText = 'margin:0 0 16px 0;color:#34495e;font-size:18px;font-weight:500;';
+            generationContainer.appendChild(generationTitle);
+            
             const radioContainer = document.createElement('div');
-            radioContainer.style.cssText = 'margin-bottom:15px;';
-
-            // Первая радио-кнопка
-            const radio1Container = document.createElement('div');
-            radio1Container.style.cssText = 'margin-bottom:8px;display:flex;align-items:center;';
-
-            const radio1 = document.createElement('input');
-            radio1.type = 'radio';
-            radio1.name = 'generation_mode';
-            radio1.id = 'mode_remove_unused';
-            radio1.value = 'remove_unused';
-            radio1.checked = (state.settings.generation_mode || 'remove_unused') === 'remove_unused';
-            radio1.style.cssText = 'margin-right:8px;';
-
-            const radio1Label = document.createElement('label');
-            radio1Label.htmlFor = 'mode_remove_unused';
-            radio1Label.textContent = 'При генерации убираем все неиспользуемые';
-            radio1Label.style.cssText = 'cursor:pointer;';
-
-            radio1Container.appendChild(radio1);
-            radio1Container.appendChild(radio1Label);
-
-            // Вторая радио-кнопка
-            const radio2Container = document.createElement('div');
-            radio2Container.style.cssText = 'margin-bottom:8px;display:flex;align-items:center;';
-
-            const radio2 = document.createElement('input');
-            radio2.type = 'radio';
-            radio2.name = 'generation_mode';
-            radio2.id = 'mode_keep_used';
-            radio2.value = 'keep_used';
-            radio2.checked = (state.settings.generation_mode || 'remove_unused') === 'keep_used';
-            radio2.style.cssText = 'margin-right:8px;';
-
-            const radio2Label = document.createElement('label');
-            radio2Label.htmlFor = 'mode_keep_used';
-            radio2Label.textContent = 'При генерации убираем всё кроме используемых';
-            radio2Label.style.cssText = 'cursor:pointer;';
-
-            radio2Container.appendChild(radio2);
-            radio2Container.appendChild(radio2Label);
-
-            radioContainer.appendChild(radio1Container);
-            radioContainer.appendChild(radio2Container);
-            modal.appendChild(radioContainer);
-
-            // Кнопки управления
+            radioContainer.style.cssText = 'display:flex;gap:24px;';
+            
+            const radioOptions = [
+                { value: 'remove_unused', label: 'Убираем все неиспользуемые', description: 'Стандартный режим очистки' },
+                { value: 'keep_used', label: 'Убираем всё кроме используемых', description: 'Агрессивный режим очистки' }
+            ];
+            
+            radioOptions.forEach(option => {
+                const radioItem = document.createElement('div');
+                radioItem.style.cssText = 'flex:1;padding:16px;background:#f8f9fa;border-radius:8px;border:2px solid #e9ecef;';
+                
+                const radioInput = document.createElement('input');
+                radioInput.type = 'radio';
+                radioInput.name = 'generation_mode';
+                radioInput.id = 'mode_' + option.value;
+                radioInput.value = option.value;
+                radioInput.checked = (state.settings.generation_mode || 'remove_unused') === option.value;
+                radioInput.style.cssText = 'margin-right:12px;width:18px;height:18px;cursor:pointer;';
+                
+                const radioLabel = document.createElement('label');
+                radioLabel.htmlFor = 'mode_' + option.value;
+                radioLabel.style.cssText = 'cursor:pointer;display:block;';
+                
+                const labelTitle = document.createElement('div');
+                labelTitle.textContent = option.label;
+                labelTitle.style.cssText = 'font-weight:500;margin-bottom:4px;font-size:15px;';
+                
+                const labelDesc = document.createElement('div');
+                labelDesc.textContent = option.description;
+                labelDesc.style.cssText = 'font-size:13px;color:#7f8c8d;';
+                
+                radioLabel.appendChild(labelTitle);
+                radioLabel.appendChild(labelDesc);
+                
+                radioItem.appendChild(radioInput);
+                radioItem.appendChild(radioLabel);
+                radioContainer.appendChild(radioItem);
+                
+                // Выделение выбранного варианта
+                if (radioInput.checked) {
+                    radioItem.style.borderColor = '#3498db';
+                    radioItem.style.backgroundColor = '#ebf3fd';
+                }
+                
+                radioInput.addEventListener('change', () => {
+                    if (radioInput.checked) {
+                        // Сброс всех стилей
+                        radioContainer.querySelectorAll('div').forEach(item => {
+                            item.style.borderColor = '#e9ecef';
+                            item.style.backgroundColor = '#f8f9fa';
+                        });
+                        // Выделение выбранного
+                        radioItem.style.borderColor = '#3498db';
+                        radioItem.style.backgroundColor = '#ebf3fd';
+                    }
+                });
+            });
+            
+            generationContainer.appendChild(radioContainer);
+            modal.appendChild(generationContainer);
+            
+            // Кнопки
             const buttons = document.createElement('div');
-            buttons.style.cssText = 'margin-top:20px;display:flex;gap:10px;justify-content:flex-end;';
-
+            buttons.style.cssText = 'display:flex;gap:16px;justify-content:center;';
+            
             const saveBtn = document.createElement('button');
-            saveBtn.textContent = 'Сохранить';
-            saveBtn.style.cssText = 'padding:8px 16px;background:#27ae60;color:white;' +
-                'border:none;border-radius:4px;cursor:pointer;';
-
+            saveBtn.textContent = '💾 Сохранить настройки';
+            saveBtn.style.cssText = 'padding:12px 24px;background:#27ae60;color:white;border:none;' +
+                'border-radius:8px;cursor:pointer;font-size:16px;font-weight:500;min-width:180px;';
+            
             saveBtn.onclick = async () => {
                 const newSettings = {};
-
-                // Собираем настройки чекбоксов
-                settingsList.forEach(setting => {
-                    const checkbox = document.getElementById(setting.key);
-                    newSettings[setting.key] = checkbox.checked;
+                
+                // Собираем все настройки из групп
+                settingsGroups.forEach(group => {
+                    group.settings.forEach(setting => {
+                        const checkbox = document.getElementById(setting.key);
+                        newSettings[setting.key] = checkbox.checked;
+                    });
                 });
-
-                // Собираем текстовые списки
+                
                 newSettings.used_css_list = whiteListTextarea.value.trim();
                 newSettings.unused_css_list = blackListTextarea.value.trim();
-
-                // Собираем режим генерации
+                
                 const checkedRadio = document.querySelector('input[name="generation_mode"]:checked');
                 newSettings.generation_mode = checkedRadio ? checkedRadio.value : 'remove_unused';
-
+                
                 try {
                     await SettingsManager.saveSettings(newSettings);
                     overlay.remove();
@@ -1192,22 +1262,21 @@
                     UIManager.showNotification('Ошибка сохранения настроек', 'error');
                 }
             };
-
+            
             const cancelBtn = document.createElement('button');
-            cancelBtn.textContent = 'Отмена';
-            cancelBtn.style.cssText = 'padding:8px 16px;background:#95a5a6;color:white;' +
-                'border:none;border-radius:4px;cursor:pointer;';
+            cancelBtn.textContent = '❌ Отмена';
+            cancelBtn.style.cssText = 'padding:12px 24px;background:#95a5a6;color:white;border:none;' +
+                'border-radius:8px;cursor:pointer;font-size:16px;font-weight:500;min-width:120px;';
             cancelBtn.onclick = () => overlay.remove();
-
+            
             buttons.appendChild(cancelBtn);
             buttons.appendChild(saveBtn);
             modal.appendChild(buttons);
+            
             overlay.appendChild(modal);
-
             overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
             document.body.appendChild(overlay);
         }
-
     }
 
     // UI: floating button, menu, notifications
@@ -1623,6 +1692,8 @@
         static showLargeNotification(message, type = 'info', isHtml = false) {
             this.createNotification(message, type, true, isHtml);
         }
+
+
         static createNotification(message, type = 'info', isLarge = false, isHtml = false) {
             const existingNotification = document.getElementById('unused-css-notification');
             if (existingNotification) {
@@ -1671,6 +1742,9 @@
                 }
             }, timeout);
         }
+
+
+        
     }
 
     // Main logic: load, scan, periodic check
