@@ -70,34 +70,34 @@
 
         // Настройки фильтрации/сохранения разных видов правил и селекторов
         settings: {
-            media: true,               // флаг сохранения @media
-            media_print: true,         // флаг сохранения @media print
-            keyframes: true,           // флаг сохранения анимаций @keyframes
-            font_face: true,           // флаг сохранения @font-face
-            supports: true,            // флаг сохранения @supports
-            page: true,                // флаг сохранения @page
-            counter_style: true,       // флаг сохранения @counter-style
-            layer: true,               // флаг сохранения @layer
-            pseudo_classes: true,      // флаг сохранения псевдоклассов (:hover, :nth-child и т.д.)
-            pseudo_elements: true,     // флаг сохранения псевдоэлементов (::before, ::after и т.д.)
-            attribute_selectors: true, // флаг сохранения селекторов по атрибутам ([data-*], [href] и т.п.)
-            css_variables: true,       // флаг сохранения CSS-переменных (--var-name)
-            vendor_prefixes: true,     // флаг сохранения свойств с префиксами (-webkit-, -moz- и др.)
-            adjacent_selectors: true,  // флаг сохранения селекторов соседних элементов (E + F)
-            child_selectors: true,     // флаг сохранения селекторов дочерних элементов (E > F)
-            general_siblings: true,    // флаг сохранения селекторов общих соседних элементов (E ~ F)
-            css_functions: true,       // флаг сохранения правил с функциями (calc(), url(), rgb() и др.)
-            animations: true,          // флаг сохранения анимационных свойств (animation, transition)
-            transforms: true,          // флаг сохранения трансформаций (transform)
-            transitions: true,         // флаг сохранения переходов (transition)
-            percentages: true,         // флаг сохранения значений в процентах (50%, 100%)
-            escapes: true,             // флаг сохранения escape-последовательностей (\\3020 и т.п.)
-            colors: true,              // флаг сохранения цветовых функций (rgb(), hsl())
-            gradients: true,           // флаг сохранения градиентов (linear-gradient, radial-gradient)
-            filters: true,             // флаг сохранения фильтров (filter, backdrop-filter)
-            masks: true,               // флаг сохранения масок (mask, clip-path)
-            nth_selectors: true,       // флаг сохранения :nth-child, :nth-of-type
-            logical_selectors: true,   // флаг сохранения логических селекторов (:not(), :is(), :has())
+            media: false,               // флаг сохранения @media
+            media_print: false,         // флаг сохранения @media print
+            keyframes: false,           // флаг сохранения анимаций @keyframes
+            font_face: false,           // флаг сохранения @font-face
+            supports: false,            // флаг сохранения @supports
+            page: false,                // флаг сохранения @page
+            counter_style: false,       // флаг сохранения @counter-style
+            layer: false,               // флаг сохранения @layer
+            pseudo_classes: false,      // флаг сохранения псевдоклассов (:hover, :nth-child и т.д.)
+            pseudo_elements: false,     // флаг сохранения псевдоэлементов (::before, ::after и т.д.)
+            attribute_selectors: false, // флаг сохранения селекторов по атрибутам ([data-*], [href] и т.п.)
+            css_variables: false,       // флаг сохранения CSS-переменных (--var-name)
+            vendor_prefixes: false,     // флаг сохранения свойств с префиксами (-webkit-, -moz- и др.)
+            adjacent_selectors: false,  // флаг сохранения селекторов соседних элементов (E + F)
+            child_selectors: false,     // флаг сохранения селекторов дочерних элементов (E > F)
+            general_siblings: false,    // флаг сохранения селекторов общих соседних элементов (E ~ F)
+            css_functions: false,       // флаг сохранения правил с функциями (calc(), url(), rgb() и др.)
+            animations: false,          // флаг сохранения анимационных свойств (animation, transition)
+            transforms: false,          // флаг сохранения трансформаций (transform)
+            transitions: false,         // флаг сохранения переходов (transition)
+            percentages: false,         // флаг сохранения значений в процентах (50%, 100%)
+            escapes: false,             // флаг сохранения escape-последовательностей (\\3020 и т.п.)
+            colors: false,              // флаг сохранения цветовых функций (rgb(), hsl())
+            gradients: false,           // флаг сохранения градиентов (linear-gradient, radial-gradient)
+            filters: false,             // флаг сохранения фильтров (filter, backdrop-filter)
+            masks: false,               // флаг сохранения масок (mask, clip-path)
+            nth_selectors: false,       // флаг сохранения :nth-child, :nth-of-type
+            logical_selectors: false,   // флаг сохранения логических селекторов (:not(), :is(), :has())
 
             used_css_list: '', // Белый список селекторов
             unused_css_list: '', // Черный список селекторов
