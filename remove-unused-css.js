@@ -647,26 +647,82 @@
             }
         }
 
+        static wildcardToRegex(pattern) {
+            if (!pattern || typeof pattern !== 'string') {
+                return null;
+            }
+            
+            // Экранируем все специальные символы регулярных выражений, кроме * и ?
+            let escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+            
+            // Заменяем wildcard символы на соответствующие регулярные выражения
+            escaped = escaped.replace(/\*/g, '.*');  // * -> .* (любые символы)
+            escaped = escaped.replace(/\?/g, '.');   // ? -> .  (один любой символ)
+            
+            try {
+                return new RegExp('^' + escaped + '$', 'i'); // i = case-insensitive
+            } catch (error) {
+                console.warn(`Некорректный wildcard паттерн: ${pattern}`, error);
+                return null;
+            }
+        }
+
+        static matchesWildcardPatterns(selector, patterns) {
+            if (!selector || !patterns || patterns.length === 0) {
+                return false;
+            }
+            
+            return patterns.some(pattern => {
+                // Если паттерн не содержит wildcard символов, делаем точное сравнение
+                if (!pattern.includes('*') && !pattern.includes('?')) {
+                    return selector === pattern;
+                }
+                
+                // Конвертируем в regex и проверяем
+                const regex = this.wildcardToRegex(pattern);
+                return regex ? regex.test(selector) : false;
+            });
+        }  
+
+        static normalizePattern(pattern) {
+            if (typeof pattern !== 'string') return '';
+            // Убираем пробелы по краям
+            let p = pattern.trim();
+            // Игнорируем пустые строки и комментарии (начинаются с #)
+            if (!p || p.startsWith('#')) {
+                return '';
+            }
+            // Сжимаем множественные пробелы внутри строки до одного
+            p = p.replace(/\s+/g, ' ');
+            return p;
+        }
+
         static parseListFromString(listString) {
             if (!listString || typeof listString !== 'string') {
-                return new Set();
+                return [];
             }
-            return new Set(
-                listString
-                    .split(',')
-                    .map(s => s.trim())
-                    .filter(s => s.length > 0)
-            );
+            return listString
+                .split('\n')
+                .map(line => this.normalizePattern(line))
+                .filter(pat => pat.length > 0);
         }
 
         static isInWhiteList(selector) {
             const whiteList = this.parseListFromString(state.settings.used_css_list);
-            return whiteList.has(selector);
+            if (whiteList.length === 0) {
+                return false;
+            }
+            
+            return this.matchesWildcardPatterns(selector, whiteList);
         }
 
         static isInBlackList(selector) {
             const blackList = this.parseListFromString(state.settings.unused_css_list);
-            return blackList.has(selector);
+            if (blackList.length === 0) {
+                return false;
+            }
+            
+            return this.matchesWildcardPatterns(selector, blackList);
         }
 
     }
@@ -1022,7 +1078,7 @@
             const whiteListTextarea = document.createElement('textarea');
             whiteListTextarea.id = 'used_css_list';
             whiteListTextarea.value = state.settings.used_css_list || '';
-            whiteListTextarea.placeholder = 'Например: .button, #header, .*-item';
+            whiteListTextarea.placeholder = 'Каждый паттерн с новой строки:\n.button\n#header\n.*-item\n*-component\nmy-class-?';
             whiteListTextarea.style.cssText = 'width:100%;height:60px;margin-bottom:15px;' +
                 'padding:8px;border:1px solid #ddd;border-radius:4px;' +
                 'font-family:monospace;font-size:12px;resize:vertical;';
@@ -1037,7 +1093,7 @@
             const blackListTextarea = document.createElement('textarea');
             blackListTextarea.id = 'unused_css_list';
             blackListTextarea.value = state.settings.unused_css_list || '';
-            blackListTextarea.placeholder = 'Например: .old-class, #deprecated, .*-btn';
+            blackListTextarea.placeholder = 'Каждый паттерн с новой строки:\n.old-class\n#deprecated\n.*-btn\ntest-*\ndebug-?-class';
             blackListTextarea.style.cssText = 'width:100%;height:60px;margin-bottom:15px;' +
                 'padding:8px;border:1px solid #ddd;border-radius:4px;' +
                 'font-family:monospace;font-size:12px;resize:vertical;';
