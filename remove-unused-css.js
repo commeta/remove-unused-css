@@ -651,14 +651,14 @@
             if (!pattern || typeof pattern !== 'string') {
                 return null;
             }
-            
+
             // Экранируем все специальные символы регулярных выражений, кроме * и ?
             let escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
-            
+
             // Заменяем wildcard символы на соответствующие регулярные выражения
             escaped = escaped.replace(/\*/g, '.*');  // * -> .* (любые символы)
             escaped = escaped.replace(/\?/g, '.');   // ? -> .  (один любой символ)
-            
+
             try {
                 return new RegExp('^' + escaped + '$', 'i'); // i = case-insensitive
             } catch (error) {
@@ -671,18 +671,18 @@
             if (!selector || !patterns || patterns.length === 0) {
                 return false;
             }
-            
+
             return patterns.some(pattern => {
                 // Если паттерн не содержит wildcard символов, делаем точное сравнение
                 if (!pattern.includes('*') && !pattern.includes('?')) {
                     return selector === pattern;
                 }
-                
+
                 // Конвертируем в regex и проверяем
                 const regex = this.wildcardToRegex(pattern);
                 return regex ? regex.test(selector) : false;
             });
-        }  
+        }
 
         static normalizePattern(pattern) {
             if (typeof pattern !== 'string') return '';
@@ -712,7 +712,7 @@
             if (whiteList.length === 0) {
                 return false;
             }
-            
+
             return this.matchesWildcardPatterns(selector, whiteList);
         }
 
@@ -721,7 +721,7 @@
             if (blackList.length === 0) {
                 return false;
             }
-            
+
             return this.matchesWildcardPatterns(selector, blackList);
         }
 
@@ -999,16 +999,16 @@
             overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;' +
                 'background:rgba(0,0,0,0.6);z-index:10001;display:flex;' +
                 'align-items:center;justify-content:center;font-family:system-ui,-apple-system,sans-serif;';
-            
+
             const modal = document.createElement('div');
             modal.style.cssText = 'background:#ffffff;border-radius:12px;padding:32px;' +
                 'max-width:800px;width:95%;max-height:85%;overflow-y:auto;color:#2c3e50;' +
                 'box-shadow:0 20px 60px rgba(0,0,0,0.3);border:1px solid #e1e8ed;';
-            
+
             const title = document.createElement('h2');
             title.textContent = 'Настройки защиты селекторов';
             title.style.cssText = 'margin:0 0 24px 0;color:#2c3e50;font-size:24px;font-weight:600;text-align:center;';
-            
+
             // Группировка настроек
             const settingsGroups = [
                 {
@@ -1064,64 +1064,64 @@
                     ]
                 }
             ];
-            
+
             modal.appendChild(title);
-            
+
             // Создание групп настроек
             settingsGroups.forEach((group, groupIndex) => {
                 const groupContainer = document.createElement('div');
                 groupContainer.style.cssText = 'margin-bottom:24px;';
-                
+
                 const groupTitle = document.createElement('h3');
                 groupTitle.innerHTML = group.icon + ' ' + group.title;
                 groupTitle.style.cssText = 'margin:0 0 16px 0;color:#34495e;font-size:18px;font-weight:500;' +
                     'padding-bottom:8px;border-bottom:2px solid #ecf0f1;';
                 groupContainer.appendChild(groupTitle);
-                
+
                 const groupGrid = document.createElement('div');
                 groupGrid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;';
-                
+
                 group.settings.forEach(setting => {
                     const item = document.createElement('div');
                     item.style.cssText = 'display:flex;align-items:center;padding:8px 12px;' +
                         'background:#f8f9fa;border-radius:6px;border:1px solid #e9ecef;';
-                    
+
                     const checkbox = document.createElement('input');
                     checkbox.type = 'checkbox';
                     checkbox.id = setting.key;
                     checkbox.checked = state.settings[setting.key];
                     checkbox.style.cssText = 'margin-right:12px;width:18px;height:18px;cursor:pointer;';
-                    
+
                     const label = document.createElement('label');
                     label.htmlFor = setting.key;
                     label.textContent = setting.label;
                     label.style.cssText = 'cursor:pointer;flex:1;font-size:14px;line-height:1.4;';
-                    
+
                     item.appendChild(checkbox);
                     item.appendChild(label);
                     groupGrid.appendChild(item);
                 });
-                
+
                 groupContainer.appendChild(groupGrid);
                 modal.appendChild(groupContainer);
             });
-            
+
             // Разделитель
             const separator1 = document.createElement('div');
             separator1.style.cssText = 'height:1px;background:#e1e8ed;margin:32px 0;';
             modal.appendChild(separator1);
-            
+
             // Списки селекторов
             const listsContainer = document.createElement('div');
-            listsContainer.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:24px;';
-            
+            listsContainer.style.cssText = 'display:grid;grid-template-columns:1fr;gap:24px;margin-bottom:24px;';
+
             // Белый список
             const whiteListContainer = document.createElement('div');
             const whiteListLabel = document.createElement('label');
             whiteListLabel.innerHTML = '✅ <strong>Белый список селекторов</strong>';
             whiteListLabel.style.cssText = 'display:block;margin-bottom:8px;font-size:16px;color:#27ae60;';
             whiteListContainer.appendChild(whiteListLabel);
-            
+
             const whiteListTextarea = document.createElement('textarea');
             whiteListTextarea.id = 'used_css_list';
             whiteListTextarea.value = state.settings.used_css_list || '';
@@ -1130,14 +1130,14 @@
                 'border:2px solid #27ae60;border-radius:8px;font-family:Consolas,Monaco,monospace;' +
                 'font-size:13px;resize:vertical;background:#f8fff8;';
             whiteListContainer.appendChild(whiteListTextarea);
-            
+
             // Черный список
             const blackListContainer = document.createElement('div');
             const blackListLabel = document.createElement('label');
             blackListLabel.innerHTML = '❌ <strong>Черный список селекторов</strong>';
             blackListLabel.style.cssText = 'display:block;margin-bottom:8px;font-size:16px;color:#e74c3c;';
             blackListContainer.appendChild(blackListLabel);
-            
+
             const blackListTextarea = document.createElement('textarea');
             blackListTextarea.id = 'unused_css_list';
             blackListTextarea.value = state.settings.unused_css_list || '';
@@ -1146,37 +1146,37 @@
                 'border:2px solid #e74c3c;border-radius:8px;font-family:Consolas,Monaco,monospace;' +
                 'font-size:13px;resize:vertical;background:#fff8f8;';
             blackListContainer.appendChild(blackListTextarea);
-            
+
             listsContainer.appendChild(whiteListContainer);
             listsContainer.appendChild(blackListContainer);
             modal.appendChild(listsContainer);
-            
+
             // Разделитель
             const separator2 = document.createElement('div');
             separator2.style.cssText = 'height:1px;background:#e1e8ed;margin:24px 0;';
             modal.appendChild(separator2);
-            
+
             // Режим генерации
             const generationContainer = document.createElement('div');
             generationContainer.style.cssText = 'margin-bottom:32px;';
-            
+
             const generationTitle = document.createElement('h3');
             generationTitle.innerHTML = '🛠️ Режим генерации файлов';
             generationTitle.style.cssText = 'margin:0 0 16px 0;color:#34495e;font-size:18px;font-weight:500;';
             generationContainer.appendChild(generationTitle);
-            
+
             const radioContainer = document.createElement('div');
             radioContainer.style.cssText = 'display:flex;gap:24px;';
-            
+
             const radioOptions = [
                 { value: 'remove_unused', label: 'Убираем все неиспользуемые', description: 'Стандартный режим очистки' },
                 { value: 'keep_used', label: 'Убираем всё кроме используемых', description: 'Агрессивный режим очистки' }
             ];
-            
+
             radioOptions.forEach(option => {
                 const radioItem = document.createElement('div');
                 radioItem.style.cssText = 'flex:1;padding:16px;background:#f8f9fa;border-radius:8px;border:2px solid #e9ecef;';
-                
+
                 const radioInput = document.createElement('input');
                 radioInput.type = 'radio';
                 radioInput.name = 'generation_mode';
@@ -1184,32 +1184,32 @@
                 radioInput.value = option.value;
                 radioInput.checked = (state.settings.generation_mode || 'remove_unused') === option.value;
                 radioInput.style.cssText = 'margin-right:12px;width:18px;height:18px;cursor:pointer;';
-                
+
                 const radioLabel = document.createElement('label');
                 radioLabel.htmlFor = 'mode_' + option.value;
                 radioLabel.style.cssText = 'cursor:pointer;display:block;';
-                
+
                 const labelTitle = document.createElement('div');
                 labelTitle.textContent = option.label;
                 labelTitle.style.cssText = 'font-weight:500;margin-bottom:4px;font-size:15px;';
-                
+
                 const labelDesc = document.createElement('div');
                 labelDesc.textContent = option.description;
                 labelDesc.style.cssText = 'font-size:13px;color:#7f8c8d;';
-                
+
                 radioLabel.appendChild(labelTitle);
                 radioLabel.appendChild(labelDesc);
-                
+
                 radioItem.appendChild(radioInput);
                 radioItem.appendChild(radioLabel);
                 radioContainer.appendChild(radioItem);
-                
+
                 // Выделение выбранного варианта
                 if (radioInput.checked) {
                     radioItem.style.borderColor = '#3498db';
                     radioItem.style.backgroundColor = '#ebf3fd';
                 }
-                
+
                 radioInput.addEventListener('change', () => {
                     if (radioInput.checked) {
                         // Сброс всех стилей
@@ -1223,22 +1223,22 @@
                     }
                 });
             });
-            
+
             generationContainer.appendChild(radioContainer);
             modal.appendChild(generationContainer);
-            
+
             // Кнопки
             const buttons = document.createElement('div');
             buttons.style.cssText = 'display:flex;gap:16px;justify-content:center;';
-            
+
             const saveBtn = document.createElement('button');
             saveBtn.textContent = '💾 Сохранить настройки';
             saveBtn.style.cssText = 'padding:12px 24px;background:#27ae60;color:white;border:none;' +
                 'border-radius:8px;cursor:pointer;font-size:16px;font-weight:500;min-width:180px;';
-            
+
             saveBtn.onclick = async () => {
                 const newSettings = {};
-                
+
                 // Собираем все настройки из групп
                 settingsGroups.forEach(group => {
                     group.settings.forEach(setting => {
@@ -1246,13 +1246,13 @@
                         newSettings[setting.key] = checkbox.checked;
                     });
                 });
-                
+
                 newSettings.used_css_list = whiteListTextarea.value.trim();
                 newSettings.unused_css_list = blackListTextarea.value.trim();
-                
+
                 const checkedRadio = document.querySelector('input[name="generation_mode"]:checked');
                 newSettings.generation_mode = checkedRadio ? checkedRadio.value : 'remove_unused';
-                
+
                 try {
                     await SettingsManager.saveSettings(newSettings);
                     overlay.remove();
@@ -1262,17 +1262,17 @@
                     UIManager.showNotification('Ошибка сохранения настроек', 'error');
                 }
             };
-            
+
             const cancelBtn = document.createElement('button');
             cancelBtn.textContent = '❌ Отмена';
             cancelBtn.style.cssText = 'padding:12px 24px;background:#95a5a6;color:white;border:none;' +
                 'border-radius:8px;cursor:pointer;font-size:16px;font-weight:500;min-width:120px;';
             cancelBtn.onclick = () => overlay.remove();
-            
+
             buttons.appendChild(cancelBtn);
             buttons.appendChild(saveBtn);
             modal.appendChild(buttons);
-            
+
             overlay.appendChild(modal);
             overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
             document.body.appendChild(overlay);
@@ -1345,7 +1345,9 @@
                 { text: 'Настройки', action: 'settings', icon: '⚙️' },
                 { text: 'Детектор', action: 'detector', icon: '🔍' },
                 { text: 'Краулер', action: 'crawler', icon: '🕷️' },
-                { text: 'Сброс данных', action: 'reset', icon: '🔄' }
+                { text: 'Сброс данных', action: 'reset', icon: '🗑️' },
+                { text: 'Обновить файлы', action: 'replace', icon: '🔁' },
+                { text: 'Восстановить файлы', action: 'restore', icon: '📦' }
             ];
 
             menuItems.forEach((item, index) => {
@@ -1426,6 +1428,17 @@
 
         static async handleMenuClick(action) {
             if (state.isProcessing) return;
+
+
+            if (action === 'replace') {
+                await this.handleReplaceCSS();
+                return;
+            }
+
+            if (action === 'restore') {
+                await this.handleRestoreCSS();
+                return;
+            }
 
             if (action === 'reset') {
                 if (confirm('Вы уверены, что хотите сбросить все данные? Это действие нельзя отменить!')) {
@@ -1743,8 +1756,281 @@
             }, timeout);
         }
 
+        /**
+         * Обработка замены CSS файлов
+         */
+        static async handleReplaceCSS() {
+            try {
+                if (!confirm('Вы уверены, что хотите заменить текущие CSS файлы? Это действие нельзя отменить без резервной копии!')) {
+                    return;
+                }
 
-        
+                this.showNotification('Выполняется замена CSS файлов...', 'info');
+
+                const response = await fetch(CONFIG.SERVER_ENDPOINT, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Action': 'replace'
+                    },
+                    body: JSON.stringify({})
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const result = await response.json();
+
+                if (result.success) {
+                    this.showNotification(result.message || 'CSS файлы успешно заменены', 'success');
+
+                    // Показать дополнительную информацию если есть
+                    if (result.processed_files && result.processed_files.length > 0) {
+                        console.log('Обработанные файлы:', result.processed_files);
+                    }
+                    if (result.errors && result.errors.length > 0) {
+                        console.warn('Предупреждения:', result.errors);
+                    }
+                } else {
+                    throw new Error(result.error || 'Неизвестная ошибка при замене CSS');
+                }
+            } catch (error) {
+                console.error('Ошибка замены CSS:', error);
+                this.showNotification(`Ошибка замены CSS: ${error.message}`, 'error');
+            }
+        }
+
+        /**
+         * Обработка восстановления CSS из резервной копии
+         */
+        static async handleRestoreCSS() {
+            try {
+                this.showNotification('Загрузка списка резервных копий...', 'info');
+
+                // Получаем список резервных копий
+                const response = await fetch(CONFIG.SERVER_ENDPOINT, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Action': 'backup'
+                    },
+                    body: JSON.stringify({})
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const result = await response.json();
+
+                if (!result.success) {
+                    throw new Error(result.error || 'Не удалось получить список резервных копий');
+                }
+
+                const backups = result.data?.backups || [];
+
+                if (backups.length === 0) {
+                    this.showNotification('Резервных копий не найдено', 'info');
+                    return;
+                }
+
+                // Показываем модальное окно с выбором резервной копии
+                this.showBackupSelectionModal(backups);
+
+            } catch (error) {
+                console.error('Ошибка получения резервных копий:', error);
+                this.showNotification(`Ошибка: ${error.message}`, 'error');
+            }
+        }
+
+        /**
+         * Показывает модальное окно для выбора резервной копии
+         */
+        static showBackupSelectionModal(backups) {
+            // Создаем overlay
+            const overlay = document.createElement('div');
+            overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;' +
+                'background:rgba(0,0,0,0.6);z-index:10002;display:flex;' +
+                'align-items:center;justify-content:center;font-family:system-ui,-apple-system,sans-serif;';
+
+            // Создаем модальное окно
+            const modal = document.createElement('div');
+            modal.style.cssText = 'background:#ffffff;border-radius:12px;padding:32px;' +
+                'max-width:700px;width:90%;max-height:80%;overflow-y:auto;color:#2c3e50;' +
+                'box-shadow:0 20px 60px rgba(0,0,0,0.3);border:1px solid #e1e8ed;';
+
+            // Заголовок
+            const title = document.createElement('h2');
+            title.textContent = '📦 Выбор резервной копии для восстановления';
+            title.style.cssText = 'margin:0 0 24px 0;color:#2c3e50;font-size:24px;font-weight:600;text-align:center;';
+            modal.appendChild(title);
+
+            // Описание
+            const description = document.createElement('p');
+            description.textContent = 'Выберите резервную копию для восстановления. Текущие CSS файлы будут перезаписаны.';
+            description.style.cssText = 'margin:0 0 20px 0;color:#7f8c8d;text-align:center;font-size:14px;';
+            modal.appendChild(description);
+
+            // Поиск (опционально)
+            const searchContainer = document.createElement('div');
+            searchContainer.style.cssText = 'margin-bottom:20px;';
+
+            const searchInput = document.createElement('input');
+            searchInput.type = 'text';
+            searchInput.placeholder = 'Поиск по имени или дате...';
+            searchInput.style.cssText = 'width:100%;padding:10px;border:2px solid #e1e8ed;border-radius:6px;' +
+                'font-size:14px;box-sizing:border-box;';
+            searchContainer.appendChild(searchInput);
+            modal.appendChild(searchContainer);
+
+            // Контейнер для списка
+            const listContainer = document.createElement('div');
+            listContainer.style.cssText = 'max-height:300px;overflow-y:auto;border:1px solid #e1e8ed;border-radius:6px;';
+            modal.appendChild(listContainer);
+
+            // Функция отображения списка
+            const renderBackupList = (filteredBackups) => {
+                listContainer.innerHTML = '';
+
+                if (filteredBackups.length === 0) {
+                    const noResults = document.createElement('div');
+                    noResults.textContent = 'Резервные копии не найдены';
+                    noResults.style.cssText = 'padding:20px;text-align:center;color:#7f8c8d;';
+                    listContainer.appendChild(noResults);
+                    return;
+                }
+
+                filteredBackups.forEach((backup, index) => {
+                    const item = document.createElement('div');
+                    item.style.cssText = 'padding:16px;border-bottom:1px solid #f8f9fa;cursor:pointer;' +
+                        'transition:background-color 0.2s ease;display:flex;justify-content:space-between;align-items:center;';
+
+                    if (index === filteredBackups.length - 1) {
+                        item.style.borderBottom = 'none';
+                    }
+
+                    // Информация о бэкапе
+                    const infoDiv = document.createElement('div');
+                    infoDiv.style.cssText = 'flex:1;';
+
+                    const nameDiv = document.createElement('div');
+                    nameDiv.textContent = backup.name;
+                    nameDiv.style.cssText = 'font-weight:600;font-size:16px;color:#2c3e50;margin-bottom:4px;';
+
+                    const dateDiv = document.createElement('div');
+                    dateDiv.textContent = `📅 ${backup.created} • 📄 ${backup.file_count} файлов`;
+                    dateDiv.style.cssText = 'font-size:13px;color:#7f8c8d;';
+
+                    infoDiv.appendChild(nameDiv);
+                    infoDiv.appendChild(dateDiv);
+
+                    // Кнопка восстановления
+                    const restoreBtn = document.createElement('button');
+                    restoreBtn.textContent = '🔄 Восстановить';
+                    restoreBtn.style.cssText = 'background:#3498db;color:white;border:none;padding:8px 16px;' +
+                        'border-radius:6px;cursor:pointer;font-size:14px;font-weight:500;';
+
+                    // Обработчики событий
+                    const handleRestore = async () => {
+                        const confirmMessage = `Вы уверены, что хотите восстановить резервную копию "${backup.name}"?\n\n` +
+                            `Дата создания: ${backup.created}\n` +
+                            `Количество файлов: ${backup.file_count}\n\n` +
+                            `Это действие перезапишет текущие CSS файлы!`;
+
+                        if (!confirm(confirmMessage)) {
+                            return;
+                        }
+
+                        try {
+                            overlay.remove();
+                            this.showNotification('Восстановление резервной копии...', 'info');
+
+                            const response = await fetch(CONFIG.SERVER_ENDPOINT, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'X-Action': 'restore'
+                                },
+                                body: JSON.stringify({ backup_name: backup.name })
+                            });
+
+                            if (!response.ok) {
+                                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                            }
+
+                            const result = await response.json();
+
+                            if (result.success) {
+                                this.showNotification(result.message || 'CSS файлы успешно восстановлены', 'success');
+
+                                if (result.processed_files && result.processed_files.length > 0) {
+                                    console.log('Восстановленные файлы:', result.processed_files);
+                                }
+                                if (result.errors && result.errors.length > 0) {
+                                    console.warn('Предупреждения при восстановлении:', result.errors);
+                                }
+                            } else {
+                                throw new Error(result.error || 'Неизвестная ошибка при восстановлении');
+                            }
+                        } catch (error) {
+                            console.error('Ошибка восстановления:', error);
+                            this.showNotification(`Ошибка восстановления: ${error.message}`, 'error');
+                        }
+                    };
+
+                    item.addEventListener('mouseenter', () => {
+                        item.style.backgroundColor = '#f8f9fa';
+                    });
+
+                    item.addEventListener('mouseleave', () => {
+                        item.style.backgroundColor = 'transparent';
+                    });
+
+                    restoreBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        handleRestore();
+                    });
+
+                    item.addEventListener('click', handleRestore);
+
+                    item.appendChild(infoDiv);
+                    item.appendChild(restoreBtn);
+                    listContainer.appendChild(item);
+                });
+            };
+
+            // Поиск
+            searchInput.addEventListener('input', () => {
+                const query = searchInput.value.toLowerCase();
+                const filtered = backups.filter(backup =>
+                    backup.name.toLowerCase().includes(query) ||
+                    backup.created.toLowerCase().includes(query)
+                );
+                renderBackupList(filtered);
+            });
+
+            // Первоначальное отображение
+            renderBackupList(backups);
+
+            // Кнопка закрытия
+            const closeButton = document.createElement('button');
+            closeButton.textContent = '❌ Закрыть';
+            closeButton.style.cssText = 'display:block;margin:20px auto 0;padding:10px 20px;' +
+                'background:#95a5a6;color:white;border:none;border-radius:6px;cursor:pointer;font-size:14px;';
+            closeButton.addEventListener('click', () => overlay.remove());
+            modal.appendChild(closeButton);
+
+            // Закрытие по клику на overlay
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) {
+                    overlay.remove();
+                }
+            });
+
+            overlay.appendChild(modal);
+            document.body.appendChild(overlay);
+        }
     }
 
     // Main logic: load, scan, periodic check
