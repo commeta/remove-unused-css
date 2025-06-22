@@ -327,19 +327,42 @@ class RemoveUnusedCSSProcessor
                 $this->sendError(405, 'Method Not Allowed');
                 return;
             }
+
             $requestData = $this->getInputData();
-            if (!$requestData) {
-                $this->sendError(400, 'Invalid JSON data');
-                return;
-            }
             $action = $_SERVER['HTTP_X_ACTION'] ?? ($_GET['action'] ?? 'save');
+
             if ($action === 'save') {
+                if (!$requestData) {
+                    $this->sendError(400, 'Invalid JSON data');
+                    return;
+                }
                 $this->saveUnusedSelectors($requestData);
                 $this->sendSuccess('Данные успешно сохранены');
             } elseif ($action === 'generate') {
+                if (!$requestData) {
+                    $this->sendError(400, 'Invalid JSON data');
+                    return;
+                }
                 $this->generateCSSFiles($requestData);
                 $this->sendSuccessWithStatistics('Файлы успешно сгенерированы');
+            } elseif ($action === 'replace') {
+                $this->replaceCSSFiles();
+                $this->sendSuccess('CSS файлы успешно заменены');
+            } elseif ($action === 'backup') {
+                $backupList = $this->getBackupList();
+                $this->sendSuccessWithData('Список резервных копий получен', ['backups' => $backupList]);
+            } elseif ($action === 'restore') {
+                if (!$requestData || !isset($requestData['backup_name'])) {
+                    $this->sendError(400, 'Backup name is required');
+                    return;
+                }
+                $this->restoreCSSFiles($requestData['backup_name']);
+                $this->sendSuccess('CSS файлы успешно восстановлены');
             } elseif ($action === 'settings' || $action === 'saveSettings') {
+                if (!$requestData) {
+                    $this->sendError(400, 'Invalid JSON data');
+                    return;
+                }
                 $this->handleSettings($requestData);
             } else {
                 $this->sendError(400, 'Unknown action');
@@ -394,6 +417,12 @@ class RemoveUnusedCSSProcessor
 
     private function getInputData(): ?array
     {
+        // Для некоторых действий данные не требуются
+        $action = $_SERVER['HTTP_X_ACTION'] ?? ($_GET['action'] ?? 'save');
+        if (in_array($action, ['backup', 'replace'])) {
+            return []; // Возвращаем пустой массив для действий которые не требуют входных данных
+        }
+        
         if (
             isset($_SERVER['CONTENT_LENGTH']) &&
             is_numeric($_SERVER['CONTENT_LENGTH']) &&
@@ -404,13 +433,17 @@ class RemoveUnusedCSSProcessor
 
         $input = file_get_contents('php://input', false, null, 0, self::MAX_INPUT_SIZE + 1);
         if (!$input) return null;
+
         if (strlen($input) > self::MAX_INPUT_SIZE) {
             throw new RuntimeException('Payload too large', 413);
         }
+
         $data = json_decode($input, true, self::JSON_DECODE_DEPTH);
         if (json_last_error() !== JSON_ERROR_NONE) return null;
+
         return is_array($data) ? $data : null;
     }
+
 
     private function saveUnusedSelectors(array $selectorData): void
     {
@@ -425,8 +458,72 @@ class RemoveUnusedCSSProcessor
         $masterSelectors = $this->loadMasterSelectors();
         $this->updateSelectorsUsage($masterSelectors, $selectorsPerFile);
         $this->saveMasterSelectors($masterSelectors);
-        $this->createBackup($masterSelectors);
+        // $this->createBackup($masterSelectors);
         $this->generateCleanCssFiles($masterSelectors);
+    }
+
+
+    /**
+     * Заменяет исходные CSS файлы на сгенерированные из CSS_DIR
+     * Создает резервную копию перед заменой
+     */
+    private function replaceCSSFiles(): void
+    {
+        // Проверяем существование мастер списка
+        $selectorsPath = $this->baseDir . '/' . self::SELECTORS_FILE;
+        if (!file_exists($selectorsPath)) {
+            throw new RuntimeException('Мастер список селекторов не найден. Сначала выполните генерацию CSS файлов.');
+        }
+
+        $masterSelectors = $this->loadMasterSelectors();
+        if (empty($masterSelectors)) {
+            throw new RuntimeException('Мастер список селекторов пуст. Сначала выполните генерацию CSS файлов.');
+        }
+
+        // Создаем резервную копию исходных файлов
+        $this->createBackupFromOriginals($masterSelectors);
+        
+        $cssDir = $this->baseDir . '/' . self::CSS_DIR;
+        $replacedCount = 0;
+        $errors = [];
+
+        foreach ($masterSelectors as $relativePath => $fileData) {
+            try {
+                $originalPath = $this->getFullFilePath($relativePath);
+                $generatedPath = $cssDir . $relativePath;
+                
+                if (!$originalPath || !file_exists($originalPath)) {
+                    $errors[] = "Исходный файл не найден: {$relativePath}";
+                    continue;
+                }
+                
+                if (!file_exists($generatedPath)) {
+                    $errors[] = "Сгенерированный файл не найден: {$relativePath}";
+                    continue;
+                }
+                
+                // Создаем директорию если нужно
+                $this->ensureDirectoryExists(dirname($originalPath));
+                
+                // Заменяем файл
+                if (copy($generatedPath, $originalPath)) {
+                    $replacedCount++;
+                } else {
+                    $errors[] = "Не удалось заменить файл: {$relativePath}";
+                }
+                
+            } catch (Exception $e) {
+                $errors[] = "Ошибка замены файла {$relativePath}: " . $e->getMessage();
+            }
+        }
+        
+        // Обновляем статистику и ошибки
+        $this->statistics['replaced_files'] = $replacedCount;
+        $this->errors = array_merge($this->errors, $errors);
+        
+        if ($replacedCount === 0) {
+            throw new RuntimeException('Не удалось заменить ни одного файла');
+        }
     }
 
     private function loadMasterSelectors(): array
@@ -799,6 +896,173 @@ class RemoveUnusedCSSProcessor
         $combined = $cssDir . self::COMBINED_FILE;
         if (file_exists($combined)) {
             copy($combined, $backupDir . self::CSS_DIR . self::COMBINED_FILE);
+        }
+    }
+
+
+    /**
+     * Создает резервную копию исходных файлов перед заменой
+     */
+    private function createBackupFromOriginals(array $masterSelectors): void
+    {
+        $timestamp = date('Y-m-d_H-i-s');
+        $backupDir = $this->baseDir . '/' . self::BACKUP_DIR . $timestamp . '/';
+        $this->ensureDirectoryExists($backupDir);
+        
+        $backedUpCount = 0;
+        
+        foreach ($masterSelectors as $relativePath => $fileData) {
+            try {
+                $originalPath = $this->getFullFilePath($relativePath);
+                if (!$originalPath || !file_exists($originalPath)) {
+                    continue;
+                }
+                
+                $backupPath = $backupDir . $relativePath;
+                $this->ensureDirectoryExists(dirname($backupPath));
+                
+                if (copy($originalPath, $backupPath)) {
+                    $backedUpCount++;
+                } else {
+                    $this->errors[] = "Не удалось создать резервную копию: {$relativePath}";
+                }
+                
+            } catch (Exception $e) {
+                $this->errors[] = "Ошибка создания резервной копии {$relativePath}: " . $e->getMessage();
+            }
+        }
+        
+        if ($backedUpCount === 0) {
+            throw new RuntimeException('Не удалось создать резервные копии файлов');
+        }
+        
+        $this->statistics['backup_created'] = $timestamp;
+        $this->statistics['backed_up_files'] = $backedUpCount;
+    }
+
+    /**
+     * Возвращает список доступных резервных копий
+     */
+    private function getBackupList(): array
+    {
+        $backupDir = $this->baseDir . '/' . self::BACKUP_DIR;
+        
+        if (!is_dir($backupDir)) {
+            return [];
+        }
+        
+        $backups = [];
+        $iterator = new \DirectoryIterator($backupDir);
+        
+        foreach ($iterator as $item) {
+            if ($item->isDot() || !$item->isDir()) {
+                continue;
+            }
+            
+            $backupName = $item->getFilename();
+            $backupPath = $item->getPathname();
+            $createdTime = $item->getCTime();
+            
+            // Подсчитываем количество файлов в резервной копии
+            $fileCount = 0;
+            try {
+                $backupIterator = new \RecursiveIteratorIterator(
+                    new \RecursiveDirectoryIterator($backupPath, \FilesystemIterator::SKIP_DOTS)
+                );
+                
+                foreach ($backupIterator as $file) {
+                    if ($file->isFile() && strtolower($file->getExtension()) === 'css') {
+                        $fileCount++;
+                    }
+                }
+            } catch (Exception $e) {
+                // Игнорируем ошибки подсчета файлов
+            }
+            
+            $backups[] = [
+                'name' => $backupName,
+                'created' => date('Y-m-d H:i:s', $createdTime),
+                'timestamp' => $createdTime,
+                'file_count' => $fileCount
+            ];
+        }
+        
+        // Сортируем по времени создания (новые первыми)
+        usort($backups, function($a, $b) {
+            return $b['timestamp'] - $a['timestamp'];
+        });
+        
+        return $backups;
+    }
+
+
+    /**
+     * Восстанавливает CSS файлы из указанной резервной копии
+     */
+    private function restoreCSSFiles(string $backupName): void
+    {
+        // Проверяем существование мастер списка
+        $selectorsPath = $this->baseDir . '/' . self::SELECTORS_FILE;
+        if (!file_exists($selectorsPath)) {
+            throw new RuntimeException('Мастер список селекторов не найден');
+        }
+        
+        // Валидация имени резервной копии
+        if (!preg_match('/^[a-zA-Z0-9_-]+$/', $backupName)) {
+            throw new RuntimeException('Недопустимое имя резервной копии');
+        }
+        
+        $backupDir = $this->baseDir . '/' . self::BACKUP_DIR . $backupName . '/';
+        
+        if (!is_dir($backupDir)) {
+            throw new RuntimeException('Резервная копия не найдена: ' . $backupName);
+        }
+        
+        $masterSelectors = $this->loadMasterSelectors();
+        if (empty($masterSelectors)) {
+            throw new RuntimeException('Мастер список селекторов пуст');
+        }
+        
+        $restoredCount = 0;
+        $errors = [];
+        
+        foreach ($masterSelectors as $relativePath => $fileData) {
+            try {
+                $originalPath = $this->getFullFilePath($relativePath);
+                $backupFilePath = $backupDir . $relativePath;
+                
+                if (!$originalPath) {
+                    $errors[] = "Невозможно определить путь для файла: {$relativePath}";
+                    continue;
+                }
+                
+                if (!file_exists($backupFilePath)) {
+                    $errors[] = "Файл в резервной копии не найден: {$relativePath}";
+                    continue;
+                }
+                
+                // Создаем директорию если нужно
+                $this->ensureDirectoryExists(dirname($originalPath));
+                
+                // Восстанавливаем файл
+                if (copy($backupFilePath, $originalPath)) {
+                    $restoredCount++;
+                } else {
+                    $errors[] = "Не удалось восстановить файл: {$relativePath}";
+                }
+                
+            } catch (Exception $e) {
+                $errors[] = "Ошибка восстановления файла {$relativePath}: " . $e->getMessage();
+            }
+        }
+        
+        // Обновляем статистику и ошибки
+        $this->statistics['restored_files'] = $restoredCount;
+        $this->statistics['restored_from'] = $backupName;
+        $this->errors = array_merge($this->errors, $errors);
+        
+        if ($restoredCount === 0) {
+            throw new RuntimeException('Не удалось восстановить ни одного файла');
         }
     }
 
