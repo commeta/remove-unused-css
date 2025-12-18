@@ -2111,7 +2111,10 @@
         }
     }
 
-
+    /**
+     * TabSyncManager - Управление синхронизацией между вкладками
+     * Добавлена защита от гонки данных через версионность
+     */
     class TabSyncManager {
         constructor(crawler) {
             this.crawler = crawler;
@@ -2126,9 +2129,11 @@
             try {
                 this.syncChannel = new BroadcastChannel(CONFIG.SYNC_CHANNEL);
                 this.syncChannel.onmessage = (e) => this.handleSyncMessage(e);
+
                 await this.registerTab();
                 this.startHeartbeat();
                 this.isActive = true;
+
                 this.crawler.log(`🔄 TabSync инициализирован: ${this.tabId}`, 'info');
                 return true;
             } catch (error) {
@@ -2137,23 +2142,37 @@
             }
         }
 
+        /**
+         * Регистрация вкладки с версионностью
+         */
         async registerTab() {
             if (!this.crawler.db) return;
+
             const transaction = this.crawler.db.transaction([CONFIG.TAB_STORE_NAME], 'readwrite');
             const store = transaction.objectStore(CONFIG.TAB_STORE_NAME);
+
             const tabData = {
                 id: this.tabId,
                 url: window.location.href,
                 lastHeartbeat: Date.now(),
                 status: 'active',
-                processedCount: 0
+                processedCount: 0,
+                version: 1, // ✅ Начальная версия
+                createdAt: Date.now(),
+                updatedAt: Date.now()
             };
-            store.put(tabData);
+
+            await new Promise((resolve, reject) => {
+                const request = store.put(tabData);
+                request.onsuccess = () => resolve();
+                request.onerror = () => reject(request.error);
+            });
         }
 
         startHeartbeat() {
             this.heartbeatInterval = setInterval(async () => {
                 if (!this.isActive) return;
+
                 try {
                     await this.updateHeartbeat();
                     await this.cleanupDeadTabs();
@@ -2164,51 +2183,184 @@
             }, CONFIG.TAB_HEARTBEAT_INTERVAL);
         }
 
+        /**
+         * Обновление heartbeat с защитой от гонки данных
+         * 
+         * Использует оптимистичную блокировку через версионность:
+         * 1. Читает текущую версию записи
+         * 2. Инкрементирует версию
+         * 3. Записывает с новой версией
+         * 4. Проверяет, что версия не изменилась после записи
+         * 5. При конфликте - повторяет попытку (до 3 раз)
+         */
         async updateHeartbeat() {
             if (!this.crawler.db) return;
-            const transaction = this.crawler.db.transaction([CONFIG.TAB_STORE_NAME], 'readwrite');
-            const store = transaction.objectStore(CONFIG.TAB_STORE_NAME);
-            const tabData = {
-                id: this.tabId,
-                url: window.location.href,
-                lastHeartbeat: Date.now(),
-                status: 'active',
-                processedCount: this.processedBatch.size
-            };
-            store.put(tabData);
+
+            const MAX_RETRY_ATTEMPTS = 3;
+            let attempt = 0;
+
+            while (attempt < MAX_RETRY_ATTEMPTS) {
+                try {
+                    const transaction = this.crawler.db.transaction([CONFIG.TAB_STORE_NAME], 'readwrite');
+                    const store = transaction.objectStore(CONFIG.TAB_STORE_NAME);
+
+                    // Шаг 1: Читаем текущую запись
+                    const currentData = await new Promise((resolve, reject) => {
+                        const getRequest = store.get(this.tabId);
+                        getRequest.onsuccess = () => resolve(getRequest.result);
+                        getRequest.onerror = () => reject(getRequest.error);
+                    });
+
+                    // Шаг 2: Определяем версию
+                    const currentVersion = currentData?.version || 0;
+                    const newVersion = currentVersion + 1;
+
+                    // Шаг 3: Создаем обновленную запись
+                    const tabData = {
+                        id: this.tabId,
+                        url: window.location.href,
+                        lastHeartbeat: Date.now(),
+                        status: 'active',
+                        processedCount: this.processedBatch.size,
+                        version: newVersion, // ✅ Инкрементированная версия
+                        updatedBy: this.tabId,
+                        updatedAt: Date.now()
+                    };
+
+                    // Шаг 4: Атомарная запись с проверкой версии
+                    await new Promise((resolve, reject) => {
+                        const putRequest = store.put(tabData);
+
+                        putRequest.onsuccess = () => {
+                            // Шаг 5: Проверяем, что версия не изменилась
+                            const verifyRequest = store.get(this.tabId);
+                            verifyRequest.onsuccess = () => {
+                                const verifiedData = verifyRequest.result;
+
+                                if (verifiedData && verifiedData.version === newVersion) {
+                                    // ✅ Успешная запись без конфликта
+                                    resolve();
+                                } else {
+                                    // ❌ Конфликт версии
+                                    reject(new Error('Version conflict detected'));
+                                }
+                            };
+                            verifyRequest.onerror = () => reject(verifyRequest.error);
+                        };
+
+                        putRequest.onerror = () => reject(putRequest.error);
+                    });
+
+                    // Успешно обновили - выходим
+                    return;
+
+                } catch (error) {
+                    attempt++;
+
+                    if (error.message === 'Version conflict detected') {
+                        this.crawler.log(
+                            `⚠️ Конфликт версии при обновлении heartbeat (попытка ${attempt}/${MAX_RETRY_ATTEMPTS})`,
+                            'debug'
+                        );
+
+                        if (attempt < MAX_RETRY_ATTEMPTS) {
+                            // Экспоненциальная задержка: 50ms, 100ms, 200ms
+                            await new Promise(resolve =>
+                                setTimeout(resolve, 50 * Math.pow(2, attempt - 1))
+                            );
+                            continue;
+                        } else {
+                            this.crawler.log(
+                                `❌ Не удалось обновить heartbeat после ${MAX_RETRY_ATTEMPTS} попыток`,
+                                'error'
+                            );
+                            throw error;
+                        }
+                    } else {
+                        // Другая ошибка
+                        this.crawler.log(`❌ Ошибка обновления heartbeat: ${error.message}`, 'error');
+                        throw error;
+                    }
+                }
+            }
         }
 
+        /**
+         * Очистка мертвых вкладок с проверкой версии
+         */
         async cleanupDeadTabs() {
             if (!this.crawler.db) return;
+
             const now = Date.now();
             const transaction = this.crawler.db.transaction([CONFIG.TAB_STORE_NAME], 'readwrite');
             const store = transaction.objectStore(CONFIG.TAB_STORE_NAME);
+
             const request = store.getAll();
+
             request.onsuccess = () => {
                 const tabs = request.result;
+
                 tabs.forEach(tab => {
-                    if (now - tab.lastHeartbeat > CONFIG.TAB_HEARTBEAT_INTERVAL * 3) {
-                        store.delete(tab.id);
-                        this.broadcastSync('tab_cleanup', { tabId: tab.id });
+                    const timeSinceLastHeartbeat = now - tab.lastHeartbeat;
+
+                    if (timeSinceLastHeartbeat > CONFIG.TAB_HEARTBEAT_INTERVAL * 3) {
+                        // Вкладка мертва - удаляем с проверкой версии
+                        const deleteTransaction = this.crawler.db.transaction([CONFIG.TAB_STORE_NAME], 'readwrite');
+                        const deleteStore = deleteTransaction.objectStore(CONFIG.TAB_STORE_NAME);
+
+                        // Читаем актуальную версию перед удалением
+                        const getRequest = deleteStore.get(tab.id);
+                        getRequest.onsuccess = () => {
+                            const currentTab = getRequest.result;
+
+                            // ✅ Проверяем версию и таймаут
+                            if (currentTab &&
+                                currentTab.version === tab.version &&
+                                now - currentTab.lastHeartbeat > CONFIG.TAB_HEARTBEAT_INTERVAL * 3) {
+
+                                deleteStore.delete(tab.id);
+                                this.broadcastSync('tab_cleanup', {
+                                    tabId: tab.id,
+                                    reason: 'heartbeat_timeout',
+                                    timeout: timeSinceLastHeartbeat
+                                });
+
+                                this.crawler.log(
+                                    `🧹 Очищена мертвая вкладка: ${tab.id} (timeout: ${timeSinceLastHeartbeat}ms)`,
+                                    'debug'
+                                );
+                            }
+                        };
                     }
                 });
             };
         }
 
+        /**
+         * Перераспределение застрявших URL
+         */
         async redistributeStuckUrls() {
             if (!this.crawler.db) return;
+
             const now = Date.now();
             const transaction = this.crawler.db.transaction([CONFIG.CRAWLER_STORE_NAME], 'readwrite');
             const store = transaction.objectStore(CONFIG.CRAWLER_STORE_NAME);
+
             const request = store.getAll();
+
             request.onsuccess = () => {
                 const urls = request.result;
+
                 urls.forEach(urlData => {
-                    if (urlData.status === 'processing' && urlData.lockedAt && now - urlData.lockedAt > CONFIG.URL_LEASE_TIMEOUT) {
+                    if (urlData.status === 'processing' &&
+                        urlData.lockedAt &&
+                        now - urlData.lockedAt > CONFIG.URL_LEASE_TIMEOUT) {
+
                         urlData.status = 'pending';
                         urlData.lockedBy = null;
                         urlData.lockedAt = null;
                         urlData.retryCount = (urlData.retryCount || 0) + 1;
+
                         if (urlData.retryCount > CONFIG.MAX_RETRY_COUNT) {
                             urlData.status = 'failed_max_retries';
                         } else {
@@ -2220,91 +2372,140 @@
             };
         }
 
+        /**
+         * Захват блокировки URL
+         */
         async acquireUrlLock(url) {
             if (!this.crawler.db) return false;
+
             const transaction = this.crawler.db.transaction([CONFIG.CRAWLER_STORE_NAME], 'readwrite');
             const store = transaction.objectStore(CONFIG.CRAWLER_STORE_NAME);
+
             return new Promise((resolve) => {
                 const request = store.get(url);
+
                 request.onsuccess = () => {
                     const urlData = request.result;
+
                     if (!urlData || urlData.status !== 'pending') {
                         resolve(false);
                         return;
                     }
+
                     urlData.status = 'processing';
                     urlData.lockedBy = this.tabId;
                     urlData.lockedAt = Date.now();
+
                     store.put(urlData);
                     resolve(true);
                 };
+
                 request.onerror = () => resolve(false);
             });
         }
 
+        /**
+         * Освобождение блокировки URL
+         */
         async releaseUrlLock(url, status = 'completed') {
             if (!this.crawler.db) return;
+
             const transaction = this.crawler.db.transaction([CONFIG.CRAWLER_STORE_NAME], 'readwrite');
             const store = transaction.objectStore(CONFIG.CRAWLER_STORE_NAME);
+
             const request = store.get(url);
+
             request.onsuccess = () => {
                 const urlData = request.result;
+
                 if (urlData && urlData.lockedBy === this.tabId) {
                     urlData.status = status;
                     urlData.lockedBy = null;
                     urlData.lockedAt = null;
                     urlData.completedAt = Date.now();
+
                     store.put(urlData);
                     this.broadcastSync('url_completed', { url, status });
                 }
             };
         }
 
+        /**
+         * Получение следующей порции URL для обработки
+         */
         async getNextBatch() {
             if (!this.crawler.db) return [];
+
             const transaction = this.crawler.db.transaction([CONFIG.CRAWLER_STORE_NAME], 'readonly');
             const store = transaction.objectStore(CONFIG.CRAWLER_STORE_NAME);
+
             return new Promise((resolve) => {
                 const request = store.getAll();
+
                 request.onsuccess = () => {
                     const allUrls = request.result;
-                    const pendingUrls = allUrls.filter(u => u.status === 'pending').slice(0, CONFIG.BATCH_SIZE);
+                    const pendingUrls = allUrls
+                        .filter(u => u.status === 'pending')
+                        .slice(0, CONFIG.BATCH_SIZE);
+
                     resolve(pendingUrls);
                 };
+
                 request.onerror = () => resolve([]);
             });
         }
 
+        /**
+         * Отправка сообщения синхронизации
+         */
         broadcastSync(type, data) {
             if (this.syncChannel) {
-                this.syncChannel.postMessage({ type, data, from: this.tabId, timestamp: Date.now() });
+                this.syncChannel.postMessage({
+                    type,
+                    data,
+                    from: this.tabId,
+                    timestamp: Date.now()
+                });
             }
         }
 
+        /**
+         * Обработка входящих сообщений синхронизации
+         */
         handleSyncMessage(event) {
             const { type, data, from } = event.data;
-            if (from === this.tabId) return;
+
+            if (from === this.tabId) return; // Игнорируем свои сообщения
+
             switch (type) {
                 case 'url_completed':
                     this.crawler.log(`📢 URL завершен другой вкладкой: ${data.url}`, 'debug');
                     break;
+
                 case 'url_redistributed':
                     this.crawler.log(`📢 URL перераспределен: ${data.url}`, 'debug');
                     break;
+
                 case 'tab_cleanup':
                     this.crawler.log(`📢 Очистка мертвой вкладки: ${data.tabId}`, 'debug');
                     break;
             }
         }
 
+        /**
+         * Уничтожение менеджера синхронизации
+         */
         async destroy() {
             this.isActive = false;
+
             if (this.heartbeatInterval) {
                 clearInterval(this.heartbeatInterval);
             }
+
             if (this.syncChannel) {
                 this.syncChannel.close();
             }
+
             if (this.crawler.db) {
                 const transaction = this.crawler.db.transaction([CONFIG.TAB_STORE_NAME], 'readwrite');
                 const store = transaction.objectStore(CONFIG.TAB_STORE_NAME);
@@ -2312,6 +2513,7 @@
             }
         }
     }
+
 
     class SiteCrawler {
         constructor() {
