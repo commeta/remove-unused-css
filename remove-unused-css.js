@@ -25,7 +25,7 @@
         SETTINGS_ID: 'unused-css-settings',
 
         CRAWLER_DB_NAME: 'SiteCrawlerDB', // Имя базы данных для хранения информации о сканировании
-        CRAWLER_DB_VERSION: 1, // Версия базы данных для IndexedDB
+        CRAWLER_DB_VERSION: 2, // Версия базы данных для IndexedDB
         CRAWLER_STORE_NAME: 'crawled_urls', // Имя хранилища для сохранения информации о сканированных URL
         CRAWLER_STATUS_KEY: 'crawler_status', // Ключ для хранения статуса сканирования в IndexedDB
         MAX_CRAWL_DEPTH: 5, // Максимальная глубина сканирования ссылок на сайте
@@ -2373,61 +2373,225 @@
         }
 
         /**
-         * Захват блокировки URL
+         * Захват блокировки URL с защитой от race condition через версионность
+         * 
+         * Использует оптимистичную блокировку:
+         * 1. Читает текущую версию записи
+         * 2. Проверяет, что статус = 'pending'
+         * 3. Записывает с инкрементированной версией
+         * 4. Проверяет, что версия не изменилась после записи
+         * 5. При конфликте - возвращает false (блокировка не захвачена)
+         * 
+         * @param {string} url - URL для блокировки
+         * @returns {Promise<boolean>} - true если блокировка успешно захвачена
          */
         async acquireUrlLock(url) {
             if (!this.crawler.db) return false;
 
-            const transaction = this.crawler.db.transaction([CONFIG.CRAWLER_STORE_NAME], 'readwrite');
-            const store = transaction.objectStore(CONFIG.CRAWLER_STORE_NAME);
+            const MAX_RETRY_ATTEMPTS = 3;
+            let attempt = 0;
 
-            return new Promise((resolve) => {
-                const request = store.get(url);
+            while (attempt < MAX_RETRY_ATTEMPTS) {
+                try {
+                    const transaction = this.crawler.db.transaction([CONFIG.CRAWLER_STORE_NAME], 'readwrite');
+                    const store = transaction.objectStore(CONFIG.CRAWLER_STORE_NAME);
 
-                request.onsuccess = () => {
-                    const urlData = request.result;
+                    // Шаг 1: Читаем текущую запись
+                    const currentData = await new Promise((resolve, reject) => {
+                        const getRequest = store.get(url);
+                        getRequest.onsuccess = () => resolve(getRequest.result);
+                        getRequest.onerror = () => reject(getRequest.error);
+                    });
 
-                    if (!urlData || urlData.status !== 'pending') {
-                        resolve(false);
-                        return;
+                    // Шаг 2: Проверяем возможность захвата
+                    if (!currentData || currentData.status !== 'pending') {
+                        // URL уже обработан или заблокирован другой вкладкой
+                        return false;
                     }
 
-                    urlData.status = 'processing';
-                    urlData.lockedBy = this.tabId;
-                    urlData.lockedAt = Date.now();
+                    // Определяем версию
+                    const currentVersion = currentData.version || 0;
+                    const newVersion = currentVersion + 1;
 
-                    store.put(urlData);
-                    resolve(true);
-                };
+                    // Шаг 3: Создаем обновленную запись с новой версией
+                    const updatedData = {
+                        ...currentData,
+                        status: 'processing',
+                        lockedBy: this.tabId,
+                        lockedAt: Date.now(),
+                        version: newVersion, // ✅ Инкрементированная версия
+                        updatedBy: this.tabId,
+                        updatedAt: Date.now()
+                    };
 
-                request.onerror = () => resolve(false);
-            });
+                    // Шаг 4: Атомарная запись с проверкой версии
+                    await new Promise((resolve, reject) => {
+                        const putRequest = store.put(updatedData);
+                        putRequest.onsuccess = () => {
+                            // Шаг 5: Проверяем, что версия не изменилась
+                            const verifyRequest = store.get(url);
+                            verifyRequest.onsuccess = () => {
+                                const verifiedData = verifyRequest.result;
+                                if (verifiedData &&
+                                    verifiedData.version === newVersion &&
+                                    verifiedData.lockedBy === this.tabId) {
+                                    // ✅ Успешная блокировка без конфликта
+                                    resolve(true);
+                                } else {
+                                    // ❌ Конфликт версии или другая вкладка захватила блокировку
+                                    reject(new Error('Lock acquisition conflict'));
+                                }
+                            };
+                            verifyRequest.onerror = () => reject(verifyRequest.error);
+                        };
+                        putRequest.onerror = () => reject(putRequest.error);
+                    });
+
+                    // Успешно захватили блокировку
+                    this.crawler.log(`🔒 Блокировка захвачена: ${url}`, 'debug');
+                    return true;
+
+                } catch (error) {
+                    attempt++;
+                    if (error.message === 'Lock acquisition conflict') {
+                        this.crawler.log(
+                            `⚠️ Конфликт при захвате блокировки ${url} (попытка ${attempt}/${MAX_RETRY_ATTEMPTS})`,
+                            'debug'
+                        );
+
+                        if (attempt < MAX_RETRY_ATTEMPTS) {
+                            // Экспоненциальная задержка: 10ms, 20ms, 40ms
+                            await new Promise(resolve =>
+                                setTimeout(resolve, 10 * Math.pow(2, attempt - 1))
+                            );
+                            continue;
+                        } else {
+                            // Не удалось захватить блокировку после всех попыток
+                            this.crawler.log(
+                                `❌ Не удалось захватить блокировку ${url} после ${MAX_RETRY_ATTEMPTS} попыток`,
+                                'debug'
+                            );
+                            return false;
+                        }
+                    } else {
+                        // Другая ошибка
+                        this.crawler.log(`❌ Ошибка захвата блокировки ${url}: ${error.message}`, 'error');
+                        return false;
+                    }
+                }
+            }
+
+            return false;
         }
 
         /**
-         * Освобождение блокировки URL
+         * Освобождение блокировки URL с защитой от race condition
+         * 
+         * Проверяет, что блокировка принадлежит текущей вкладке перед освобождением
+         * 
+         * @param {string} url - URL для освобождения
+         * @param {string} status - Новый статус ('completed', 'failed' и т.д.)
+         * @returns {Promise<boolean>} - true если блокировка успешно освобождена
          */
         async releaseUrlLock(url, status = 'completed') {
-            if (!this.crawler.db) return;
+            if (!this.crawler.db) return false;
 
-            const transaction = this.crawler.db.transaction([CONFIG.CRAWLER_STORE_NAME], 'readwrite');
-            const store = transaction.objectStore(CONFIG.CRAWLER_STORE_NAME);
+            const MAX_RETRY_ATTEMPTS = 3;
+            let attempt = 0;
 
-            const request = store.get(url);
+            while (attempt < MAX_RETRY_ATTEMPTS) {
+                try {
+                    const transaction = this.crawler.db.transaction([CONFIG.CRAWLER_STORE_NAME], 'readwrite');
+                    const store = transaction.objectStore(CONFIG.CRAWLER_STORE_NAME);
 
-            request.onsuccess = () => {
-                const urlData = request.result;
+                    // Шаг 1: Читаем текущую запись
+                    const currentData = await new Promise((resolve, reject) => {
+                        const getRequest = store.get(url);
+                        getRequest.onsuccess = () => resolve(getRequest.result);
+                        getRequest.onerror = () => reject(getRequest.error);
+                    });
 
-                if (urlData && urlData.lockedBy === this.tabId) {
-                    urlData.status = status;
-                    urlData.lockedBy = null;
-                    urlData.lockedAt = null;
-                    urlData.completedAt = Date.now();
+                    // Шаг 2: Проверяем владение блокировкой
+                    if (!currentData || currentData.lockedBy !== this.tabId) {
+                        this.crawler.log(
+                            `⚠️ Попытка освободить чужую блокировку: ${url}`,
+                            'debug'
+                        );
+                        return false;
+                    }
 
-                    store.put(urlData);
+                    // Определяем версию
+                    const currentVersion = currentData.version || 0;
+                    const newVersion = currentVersion + 1;
+
+                    // Шаг 3: Создаем обновленную запись
+                    const updatedData = {
+                        ...currentData,
+                        status: status,
+                        lockedBy: null,
+                        lockedAt: null,
+                        completedAt: Date.now(),
+                        version: newVersion, // ✅ Инкрементированная версия
+                        updatedBy: this.tabId,
+                        updatedAt: Date.now()
+                    };
+
+                    // Шаг 4: Атомарная запись с проверкой версии
+                    await new Promise((resolve, reject) => {
+                        const putRequest = store.put(updatedData);
+                        putRequest.onsuccess = () => {
+                            // Шаг 5: Проверяем, что версия не изменилась
+                            const verifyRequest = store.get(url);
+                            verifyRequest.onsuccess = () => {
+                                const verifiedData = verifyRequest.result;
+                                if (verifiedData && verifiedData.version === newVersion) {
+                                    // ✅ Успешное освобождение без конфликта
+                                    resolve(true);
+                                } else {
+                                    // ❌ Конфликт версии
+                                    reject(new Error('Lock release conflict'));
+                                }
+                            };
+                            verifyRequest.onerror = () => reject(verifyRequest.error);
+                        };
+                        putRequest.onerror = () => reject(putRequest.error);
+                    });
+
+                    // Успешно освободили блокировку
+                    this.crawler.log(`🔓 Блокировка освобождена: ${url} (${status})`, 'debug');
                     this.broadcastSync('url_completed', { url, status });
+                    return true;
+
+                } catch (error) {
+                    attempt++;
+                    if (error.message === 'Lock release conflict') {
+                        this.crawler.log(
+                            `⚠️ Конфликт при освобождении блокировки ${url} (попытка ${attempt}/${MAX_RETRY_ATTEMPTS})`,
+                            'debug'
+                        );
+
+                        if (attempt < MAX_RETRY_ATTEMPTS) {
+                            // Экспоненциальная задержка
+                            await new Promise(resolve =>
+                                setTimeout(resolve, 10 * Math.pow(2, attempt - 1))
+                            );
+                            continue;
+                        } else {
+                            this.crawler.log(
+                                `❌ Не удалось освободить блокировку ${url} после ${MAX_RETRY_ATTEMPTS} попыток`,
+                                'error'
+                            );
+                            return false;
+                        }
+                    } else {
+                        // Другая ошибка
+                        this.crawler.log(`❌ Ошибка освобождения блокировки ${url}: ${error.message}`, 'error');
+                        return false;
+                    }
                 }
-            };
+            }
+
+            return false;
         }
 
         /**
@@ -2690,7 +2854,10 @@
                     foundOn: foundOn,
                     status: status,
                     timestamp: Date.now(),
-                    processed: false
+                    processed: false,
+                    version: 1, // ✅ Начальная версия для новых записей
+                    createdAt: Date.now(),
+                    updatedAt: Date.now()
                 };
 
                 await new Promise((resolve, reject) => {
