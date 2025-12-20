@@ -1,0 +1,526 @@
+/* ==========================================================================
+   TEST STYLE CSS - Тестовые правила для Remove Unused CSS
+   ========================================================================== */
+
+/* Общие стили - используются на всех страницах */
+.header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 20px 0;
+    margin-bottom: 30px;
+    border-radius: 8px;
+}
+
+.logo {
+    font-size: 24px;
+    font-weight: bold;
+    padding: 10px 20px;
+}
+
+.nav {
+    padding: 0 20px;
+}
+
+.nav-list {
+    display: flex;
+    list-style: none;
+    gap: 20px;
+}
+
+.nav-list li a {
+    color: white;
+    text-decoration: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    transition: background 0.3s;
+}
+
+.nav-list li a:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.nav-list li.active a {
+    background: rgba(255, 255, 255, 0.3);
+    font-weight: bold;
+}
+
+.content {
+    background: white;
+    padding: 30px;
+    border-radius: 8px;
+    margin-bottom: 30px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.footer {
+    background: #2c3e50;
+    color: white;
+    padding: 20px;
+    text-align: center;
+    border-radius: 8px;
+    margin-top: 30px;
+}
+
+/* Кнопки */
+.btn {
+    display: inline-block;
+    padding: 12px 24px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 16px;
+    transition: all 0.3s;
+    text-decoration: none;
+    background: #3498db;
+    color: white;
+}
+
+.btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(52, 152, 219, 0.4);
+}
+
+.btn-primary {
+    background: #3498db;
+}
+
+.btn-secondary {
+    background: #95a5a6;
+}
+
+.btn-success {
+    background: #2ecc71;
+}
+
+.btn-danger {
+    background: #e74c3c;
+}
+
+/* Стили для главной страницы (home) */
+.hero {
+    text-align: center;
+    padding: 60px 20px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 8px;
+    margin-bottom: 30px;
+}
+
+.hero-title {
+    font-size: 48px;
+    margin-bottom: 20px;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.hero-subtitle {
+    font-size: 24px;
+    margin-bottom: 30px;
+    opacity: 0.9;
+}
+
+/* Стили для страницы "О нас" (about) */
+.about-section {
+    padding: 20px;
+}
+
+.about-section .lead {
+    font-size: 20px;
+    color: #7f8c8d;
+    margin-bottom: 30px;
+}
+
+.team {
+    margin-top: 40px;
+}
+
+.team h2 {
+    color: #2c3e50;
+    margin-bottom: 20px;
+}
+
+.team-member {
+    display: inline-block;
+    margin: 10px;
+    text-align: center;
+}
+
+.team-member img {
+    border-radius: 50%;
+    width: 100px;
+    height: 100px;
+}
+
+/* Стили для страницы продуктов (products) */
+.products-section h1 {
+    color: #2c3e50;
+    margin-bottom: 30px;
+}
+
+.products-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 20px;
+}
+
+.product-card {
+    background: #ecf0f1;
+    padding: 20px;
+    border-radius: 8px;
+    text-align: center;
+    transition: transform 0.3s;
+}
+
+.product-card:hover {
+    transform: scale(1.05);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+}
+
+.product-card h3 {
+    color: #2c3e50;
+    margin-bottom: 15px;
+}
+
+.price {
+    display: block;
+    font-size: 24px;
+    color: #27ae60;
+    font-weight: bold;
+    margin: 15px 0;
+}
+
+.btn-buy {
+    background: #27ae60;
+    color: white;
+    width: 100%;
+}
+
+/* Стили для страницы контактов (contact) */
+.contact-section h1 {
+    color: #2c3e50;
+    margin-bottom: 30px;
+}
+
+.contact-form {
+    max-width: 600px;
+    margin: 0 auto;
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-control {
+    width: 100%;
+    padding: 12px;
+    border: 2px solid #ecf0f1;
+    border-radius: 6px;
+    font-size: 16px;
+    transition: border-color 0.3s;
+}
+
+.form-control:focus {
+    outline: none;
+    border-color: #3498db;
+}
+
+.form-control::placeholder {
+    color: #95a5a6;
+}
+
+textarea.form-control {
+    min-height: 150px;
+    resize: vertical;
+}
+
+.btn-submit {
+    background: #3498db;
+    width: 100%;
+}
+
+/* Стили для галереи (gallery) */
+.gallery-section h1 {
+    color: #2c3e50;
+    margin-bottom: 30px;
+}
+
+.gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 15px;
+}
+
+.gallery-item {
+    position: relative;
+    overflow: hidden;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.gallery-item img {
+    width: 100%;
+    height: 200px;
+    object-fit: cover;
+    transition: transform 0.3s;
+}
+
+.gallery-item:hover img {
+    transform: scale(1.1);
+}
+
+.lightbox {
+    /* Используется только при открытии изображения */
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.9);
+    z-index: 9999;
+}
+
+/* Стили для блога (blog) */
+.blog-section h1 {
+    color: #2c3e50;
+    margin-bottom: 30px;
+}
+
+.blog-post {
+    padding: 20px 0;
+    border-bottom: 1px solid #ecf0f1;
+    margin-bottom: 20px;
+}
+
+.blog-post:last-child {
+    border-bottom: none;
+}
+
+.blog-post h2 {
+    color: #34495e;
+    margin-bottom: 10px;
+}
+
+.post-meta {
+    color: #7f8c8d;
+    font-size: 14px;
+    margin-bottom: 15px;
+}
+
+.post-meta time {
+    font-style: italic;
+}
+
+.comments {
+    margin-top: 40px;
+    padding-top: 20px;
+    border-top: 2px solid #ecf0f1;
+}
+
+.comments h3 {
+    color: #2c3e50;
+    margin-bottom: 20px;
+}
+
+/* Стили для страницы 404 */
+.error-page {
+    text-align: center;
+    padding: 80px 20px;
+}
+
+.error-404 h1 {
+    font-size: 120px;
+    color: #e74c3c;
+    margin-bottom: 20px;
+}
+
+.error-404 p {
+    font-size: 24px;
+    color: #7f8c8d;
+    margin-bottom: 30px;
+}
+
+/* Стили для тестовых ссылок */
+.test-links {
+    background: #ecf0f1;
+    padding: 20px;
+    border-radius: 8px;
+    margin-bottom: 30px;
+}
+
+.test-links h3 {
+    color: #2c3e50;
+    margin-bottom: 15px;
+}
+
+.test-links ul {
+    list-style: none;
+}
+
+.test-links li {
+    padding: 8px 0;
+    border-bottom: 1px solid #bdc3c7;
+}
+
+.test-links li:last-child {
+    border-bottom: none;
+}
+
+.test-links a {
+    color: #3498db;
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.test-links a:hover {
+    text-decoration: underline;
+}
+
+.test-links small {
+    color: #7f8c8d;
+}
+
+/* ==========================================================================
+   НЕИСПОЛЬЗУЕМЫЕ СТИЛИ - для тестирования удаления
+   ========================================================================== */
+
+/* Эти классы нигде не используются */
+.unused-class-1 {
+    color: red;
+}
+
+.unused-class-2 {
+    background: blue;
+}
+
+.old-layout {
+    display: table;
+}
+
+.deprecated-style {
+    float: left;
+}
+
+.never-used {
+    position: absolute;
+}
+
+#unused-id {
+    width: 100%;
+}
+
+.sidebar {
+    /* Сайдбар не используется */
+    width: 300px;
+}
+
+.modal {
+    /* Модальное окно не используется */
+    display: none;
+}
+
+.tooltip {
+    /* Тултип не используется */
+    position: absolute;
+}
+
+.carousel {
+    /* Карусель не используется */
+    overflow: hidden;
+}
+
+/* Медиа-запросы для адаптивности */
+@media (max-width: 768px) {
+    .nav-list {
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .hero-title {
+        font-size: 32px;
+    }
+
+    .products-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .gallery {
+        grid-template-columns: 1fr;
+    }
+
+    /* Неиспользуемое правило */
+    .mobile-only {
+        display: block;
+    }
+}
+
+/* Анимации */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(-100%);
+    }
+
+    to {
+        transform: translateX(0);
+    }
+}
+
+/* Неиспользуемая анимация */
+@keyframes bounce {
+
+    0%,
+    100% {
+        transform: translateY(0);
+    }
+
+    50% {
+        transform: translateY(-20px);
+    }
+}
+
+/* Псевдоклассы и псевдоэлементы */
+.btn::before {
+    content: '';
+    /* Декоративный элемент */
+}
+
+.nav-list li a::after {
+    /* Неиспользуемый псевдоэлемент */
+    content: '→';
+    margin-left: 5px;
+    opacity: 0;
+}
+
+/* Комбинированные селекторы */
+.header .nav .nav-list li:first-child {
+    /* Сложный селектор */
+    border-left: none;
+}
+
+.content>p:nth-child(2) {
+    /* Неиспользуемый nth-child */
+    font-weight: bold;
+}
+
+/* CSS переменные */
+:root {
+    --primary-color: #3498db;
+    --secondary-color: #2ecc71;
+    --unused-variable: #ff0000;
+}
+
+/* Вендорные префиксы */
+.card {
+    -webkit-box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    -moz-box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
